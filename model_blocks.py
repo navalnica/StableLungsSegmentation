@@ -1,7 +1,13 @@
+import os
+import pickle
+
 import torch
 import torch.nn as nn
 import tqdm
+from matplotlib import pyplot as plt
 from torch.nn import functional as F
+
+import utils
 
 
 class double_conv(nn.Module):
@@ -96,7 +102,7 @@ def my_dice_score(true, pred):
 
 def evaluate_net(
         net, data_gen, metrics, total_samples_cnt,
-        device, max_samples=None, tqdm_description=None
+        device, tqdm_description=None
 ):
     """
     Evaluate the net
@@ -104,13 +110,11 @@ def evaluate_net(
     :param net: model
     :param data_gen: data generator
     :param metrics: dict(metric name: metric function)
-    :param total_samples_cnt: total number of samples in data generator
+    :param total_samples_cnt: max_valid_samples or len(indices_valid)
     :param device: device to perform evaluation
-    :param max_samples: stop if evaluated on more than max_samples objects.
-    pass None to evaluate on the full dataset
     :param tqdm_description: string to print in tqdm progress bar
 
-    :return:
+    :return: dict: key - metric name, value - {'list': [tuple(slice_ix, value)], 'mean': float}
     """
     net.eval()
     metrics_res = {m_name: {'list': [], 'mean': 0} for m_name, m_func in metrics.items()}
@@ -132,12 +136,77 @@ def evaluate_net(
 
                 pbar.update()
 
-                if max_samples is not None:
-                    if ix >= max_samples:
-                        tqdm.tqdm.write(f'exceeded max_valid_batches: {max_samples}')
+                if total_samples_cnt is not None:
+                    if ix >= total_samples_cnt:
                         break
 
     for m_name, m_dict in metrics_res.items():
         m_dict['mean'] /= total_samples_cnt
 
     return metrics_res
+
+
+def evaluate_segmentation(
+        net, loss_func, state_dict_fp, indices_valid, scans_dp,
+        labels_dp, max_top_losses_cnt=8, device='cuda', dir='results'
+):
+    """
+    Find slices that have highest loss values for specified loss function.
+    Store indices of such slices to visualize results for the for networks with other weights.
+    Pass the same loss function that the model was trained with.
+    """
+    net.to(device=device)
+    state_dict = torch.load(state_dict_fp)
+    net.load_state_dict(state_dict)
+
+    loss_name = type(loss_func).__name__
+
+    gen = utils.get_scans_and_labels_batches(indices_valid, scans_dp, labels_dp, None, to_shuffle=False)
+    evaluation_res = evaluate_net(net, gen, {'loss': loss_func}, len(indices_valid), device,
+                                  f'evaluation for top losses')
+    top_losses = sorted(evaluation_res['loss']['list'], key=lambda x: x[1], reverse=True)
+    top_losses_indices = [x[0] for x in top_losses[:max_top_losses_cnt]]
+
+    # store top losses slice indices
+    top_losses_indices_fp = f'{dir}/top_losses_indices_{loss_name}.pickle'
+    print(f'storing top losses indices under "{top_losses_indices_fp}"')
+    with open(top_losses_indices_fp, 'wb') as fout:
+        pickle.dump(top_losses_indices, fout)
+
+    visualize_segmentation(net, top_losses_indices, scans_dp,
+                           labels_dp, dir=f'{dir}/top_{loss_name}_values_slices/{loss_name}/')
+
+    return top_losses_indices
+
+
+def visualize_segmentation(
+        net, slice_indices, scans_dp, labels_dp,
+        dir='results', scans_on_img=4, device='cuda'
+):
+    os.makedirs(dir, exist_ok=True)
+    net.eval()
+    gen = utils.get_scans_and_labels_batches(slice_indices, scans_dp, labels_dp, None, to_shuffle=False)
+    fig, ax = plt.subplots(scans_on_img, 3, figsize=(5 * 3, 5 * scans_on_img), squeeze=False)
+    j = 1
+    i = 0
+    with torch.no_grad():
+        for slice, labels, scan_ix in gen:
+            ax[i][0].imshow(slice, origin='lower')
+            ax[i][0].set_title(scan_ix)
+            ax[i][1].imshow(labels, origin='lower')
+            ax[i][1].set_title('true labels')
+            x = torch.tensor(slice, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
+            out = net(x)
+            out_bin = (out > 0.5).float()
+            out_bin_np = utils.squeeze_and_to_numpy(out_bin)
+            ax[i][2].imshow(out_bin_np, origin='lower')
+            ax[i][2].set_title(f'prediction')
+
+            if (i + 1) % scans_on_img == 0 or ((i + 1) % scans_on_img != 0 and i + 1 == len(slice_indices)):
+                fig.tight_layout()
+                fig.savefig(f'{dir}/{j}.png', dpi=200)
+                j += 1
+                i = 0
+                fig, ax = plt.subplots(scans_on_img, 3, figsize=(5 * 3, 5 * scans_on_img), squeeze=False)
+            else:
+                i += 1

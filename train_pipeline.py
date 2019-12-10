@@ -12,12 +12,9 @@ TODO
 import copy
 import time
 
-import torch.nn as nn
 from sklearn.model_selection import train_test_split
-from torch import optim
 
-from model_blocks import evaluate_net
-from model_blocks import my_dice_score
+from model_blocks import *
 from unet import UNet
 from utils import *
 
@@ -31,7 +28,7 @@ plt.rcParams['image.cmap'] = 'gray'
 def get_train_valid_indices(
         scans_dp, labels_dp, val_percent=0.15,
         restore_prev_z_dims=True, random_state=17,
-        store_train_valid_filenames_to_file=True
+        load_existing_train_valid_split=False
 ):
     scans_fns = sorted(os.listdir(scans_dp))
     labels_fns = sorted(os.listdir(labels_dp))
@@ -48,12 +45,19 @@ def get_train_valid_indices(
     print(f'total number of slices: {n_slices_total}')
     print(f'example of scans_z: {list(scans_z.items())[:5]}')
 
-    # split filenames on tran/valid
-    fns_train, fns_valid = train_test_split(
-        scans_fns, random_state=random_state, test_size=val_percent)
-    print('train, valid filenames cnt: %d, %d' % (len(fns_train), len(fns_valid)))
+    if load_existing_train_valid_split:
+        existing_fns_dir = 'results/existing_filenames'
+        print(f'loading train, valid filenames from existing files under "{existing_fns_dir}"')
+        with open(f'{existing_fns_dir}/filenames_train.txt') as fin:
+            fns_train = [x.strip() for x in fin.readlines() if x.strip()]
+        with open(f'{existing_fns_dir}/filenames_valid.txt') as fin:
+            fns_valid = [x.strip() for x in fin.readlines() if x.strip()]
+    else:
+        print('performing train, test split')
+        fns_train, fns_valid = train_test_split(
+            scans_fns, random_state=random_state, test_size=val_percent)
+        print('train, valid filenames cnt: %d, %d' % (len(fns_train), len(fns_valid)))
 
-    if store_train_valid_filenames_to_file:
         print('storing train and valid filenames under "results" dir')
         with open('results/filenames_train.txt', 'w') as fout:
             fout.writelines('\n'.join(sorted(fns_train)))
@@ -165,7 +169,7 @@ def train(
             indices_valid, scans_dp, labels_dp, None, to_shuffle=False)
         evaluation_res = evaluate_net(
             net, valid_gen, {'bce': loss_func, 'dice': my_dice_score},
-            actual_n_valid, device, max_valid_samples, f'epoch {cur_epoch}. valid')
+            actual_n_valid, device, f'epoch {cur_epoch}. valid')
 
         em['bce_valid'].append(evaluation_res['bce']['mean'])
         em['dice_valid'].append(evaluation_res['dice']['mean'])
@@ -213,57 +217,33 @@ def main():
     os.makedirs('results', exist_ok=True)
 
     indices_train, indices_valid = get_train_valid_indices(
-        scans_dp, labels_dp, restore_prev_z_dims=True)
+        scans_dp, labels_dp, restore_prev_z_dims=True, load_existing_train_valid_split=True)
 
     net = UNet(n_channels=1, n_classes=1)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
-    em = train(
-        indices_train, indices_valid,
-        scans_dp, labels_dp,
-        net, optimizer, device,
-        batch_size=4, n_epochs=4,
-        max_train_samples=20, max_valid_samples=5)
+    # optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    # em = train(
+    #     indices_train, indices_valid,
+    #     scans_dp, labels_dp,
+    #     net, optimizer, device,
+    #     batch_size=4, n_epochs=4,
+    #     max_train_samples=20, max_valid_samples=5)
+    #
+    # fig, ax = plot_learning_curves(em)
+    # fig.savefig('results/learning_curves.png')
 
-    fig, ax = plot_learning_curves(em)
-    fig.savefig('results/learning_curves.png')
+    loss_func = nn.BCELoss(reduction='mean')
+    # todo: get top losses on the full valid dataset
+    evaluate_segmentation(
+        net, loss_func, 'results/existing_checkpoints/cp_epoch_9.pth',
+        indices_valid[:100], scans_dp, labels_dp)
 
     print(separator)
     print('cuda memory stats:')
     print_cuda_memory_stats()
 
-    print(separator)
-    if 'DISPLAY' in os.environ:
-        print(f'will show plots')
-        plt.show()
-    else:
-        print('will not show plots. no DISPLAY in os.environ')
 
 
 if __name__ == '__main__':
     main()
-
-"""## visualize results"""
-# 
-# np.random.shuffle(indices_valid)
-# valid_gen = get_scans_and_labels_batches(indices_valid, scans_dp, labels_dp, 6)
-# (scans, labels, scans_ix) = next(valid_gen)
-# x = torch.tensor(scans, dtype=torch.float, device=device).unsqueeze(1)
-# with torch.no_grad():
-#     out = net(x)
-#     out_bin = (out > 0.5).float()
-# 
-# x = squeeze_and_to_numpy(x)
-# labels = np.array(labels)
-# out = squeeze_and_to_numpy(out)
-# out_bin = squeeze_and_to_numpy(out_bin)
-# items = (x, out, out_bin, labels)
-# 
-# for it in items:
-#     show_slices(it, cols=6, width=4, height=4, titles=scans_ix);
-# 
-# fig, ax = plt.subplots(1, 4, figsize=(4 * 4, 4))
-# for ix, z in enumerate(items):
-#     print(z.shape)
-#     ax[ix].hist(z.flatten(), bins=100);
