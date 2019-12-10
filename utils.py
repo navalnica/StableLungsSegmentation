@@ -81,20 +81,19 @@ def copy_checkpoints_to_gdrive(checkpoints_dp):
     shutil.copytree(checkpoints_dp, gdrive_dest)
 
 
-def plot_train_stats(epoch_loss_train, epoch_loss_valid, epoch_dice_score):
-    x = np.arange(1, len(epoch_loss_valid) + 1)
-    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+def plot_learning_curves(epoch_metrics):
+    metrics = np.unique([x.split('_')[0] for x in epoch_metrics.keys()])
+    n_epochs = max([len(l) for l in epoch_metrics.values()])
+    x = np.arange(1, n_epochs + 1)
+    fig, ax = plt.subplots(1, len(metrics), figsize=(6 * len(metrics), 5), squeeze=False)
 
-    ax[0].plot(x, epoch_loss_train, marker='o', label='train')
-    ax[0].plot(x, epoch_loss_valid, marker='o', label='valid')
-    ax[0].grid()
-    ax[0].legend()
-    ax[0].set_title('epoch losses')
-
-    ax[1].plot(x, epoch_dice_score)
-    ax[1].scatter(x, epoch_dice_score)
-    ax[1].grid()
-    ax[1].set_title('epoch validation dice scores')
+    for m, _ax in zip(metrics, ax.flatten()):
+        if len(epoch_metrics[f'{m}_train']) == len(x):
+            _ax.plot(x, epoch_metrics[f'{m}_train'], marker='o', label='train')
+        _ax.plot(x, epoch_metrics[f'{m}_valid'], marker='o', label='valid')
+        _ax.set_title(m)
+        _ax.grid()
+        _ax.legend()
 
     return fig, ax
 

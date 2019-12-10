@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import tqdm
 from torch.nn import functional as F
 
 
@@ -91,3 +92,52 @@ def my_dice_score(true, pred):
     # print(f'intersection: {intersection}. union: {union}')
     dice = 2 * intersection / (union + 2 * eps)
     return dice
+
+
+def evaluate_net(
+        net, data_gen, metrics, total_samples_cnt,
+        device, max_samples=None, tqdm_description=None
+):
+    """
+    Evaluate the net
+
+    :param net: model
+    :param data_gen: data generator
+    :param metrics: dict(metric name: metric function)
+    :param total_samples_cnt: total number of samples in data generator
+    :param device: device to perform evaluation
+    :param max_samples: stop if evaluated on more than max_samples objects.
+    pass None to evaluate on the full dataset
+    :param tqdm_description: string to print in tqdm progress bar
+
+    :return:
+    """
+    net.eval()
+    metrics_res = {m_name: {'list': [], 'mean': 0} for m_name, m_func in metrics.items()}
+
+    with torch.no_grad():
+        with tqdm.tqdm(total=total_samples_cnt, desc=tqdm_description,
+                       unit='scan', leave=True) as pbar:
+            for ix, (slice, labels, slice_ix) in enumerate(data_gen, start=1):
+                x = torch.tensor(slice, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
+                y = torch.tensor(labels, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
+                out = net(x)
+                out_bin = (out > 0.5).float()
+
+                for m_name, m_func in metrics.items():
+                    # m_value = m_func(y, out).item() # TODO
+                    m_value = m_func(y, out_bin).item()
+                    metrics_res[m_name]['mean'] += m_value
+                    metrics_res[m_name]['list'].append((slice_ix, m_value))
+
+                pbar.update()
+
+                if max_samples is not None:
+                    if ix >= max_samples:
+                        tqdm.tqdm.write(f'exceeded max_valid_batches: {max_samples}')
+                        break
+
+    for m_name, m_dict in metrics_res.items():
+        m_dict['mean'] /= total_samples_cnt
+
+    return metrics_res

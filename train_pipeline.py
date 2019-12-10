@@ -16,6 +16,7 @@ import torch.nn as nn
 from sklearn.model_selection import train_test_split
 from torch import optim
 
+from model_blocks import evaluate_net
 from model_blocks import my_dice_score
 from unet import UNet
 from utils import *
@@ -72,11 +73,11 @@ def get_train_valid_indices(
 def train(
         indices_train, indices_valid,
         scans_dp, labels_dp,
-        net, criterion, optimizer, device,
+        net, optimizer, device,
         batch_size=4, n_epochs=10,
         max_train_samples=None, max_valid_samples=None,
-        checkpoints_dp='./model_checkpoints'):
-
+        checkpoints_dp='./model_checkpoints'
+):
     actual_n_train = max_train_samples or len(indices_train)
     actual_n_valid = max_valid_samples or len(indices_valid)
 
@@ -85,17 +86,21 @@ def train(
     es_tolerance = 0.001
     es_patience = 4
 
+    loss_func = nn.BCELoss(reduction='mean')
+
     # epoch metrics
-    best_epoch = 0
-    best_dice_score = 0.0
+    em = {m: [] for m in ['bce_train', 'bce_valid', 'dice_train', 'dice_valid']}
+    loss_name = 'bce'
+    best_loss_valid = 1e+100
+    best_epoch_ix = 0
     best_net_wts = copy.deepcopy(net.state_dict())
-    em = {m: [] for m in ['loss_train', 'loss_valid', 'dice_score']}
 
     net.to(device=device)
 
     print(separator)
     print('start of the training')
-    print(f'parameters:\n'
+    print(f'parameters:\n\n'
+          f'loss function: {type(loss_func).__name__}\n'
           f'optimizer: {type(optimizer).__name__}\n'
           f'learning rate: {optimizer.defaults["lr"]}\n'
           f'momentum: {optimizer.defaults["momentum"]}\n'
@@ -108,26 +113,26 @@ def train(
           )
 
     # count global time of training
-    since = time.time()
+    train_time_start = time.time()
 
-    for cur_epoch in range(n_epochs):
-        print(f'\n{"=" * 15} epoch {cur_epoch + 1}/{n_epochs} {"=" * 15}')
+    for cur_epoch in range(1, n_epochs + 1):
+        print(f'\n{"=" * 15} epoch {cur_epoch}/{n_epochs} {"=" * 15}')
         epoch_time_start = time.time()
 
-        ############# train #############
+        # ----------- train ----------- #
         net.train()
         train_gen = get_scans_and_labels_batches(
             indices_train, scans_dp, labels_dp, batch_size)
         running_loss_train = 0
 
-        with tqdm.tqdm(total=actual_n_train, desc=f'epoch {cur_epoch + 1}. train',
+        with tqdm.tqdm(total=actual_n_train, desc=f'epoch {cur_epoch}. train',
                        unit='scan', leave=True) as pbar_t:
             for ix, (scans, labels, scans_ix) in enumerate(train_gen, start=1):
                 x = torch.tensor(scans, dtype=torch.float, device=device).unsqueeze(1)
                 y = torch.tensor(labels, dtype=torch.float, device=device).unsqueeze(1)
 
                 out = net(x)
-                loss = criterion(out, y)
+                loss = loss_func(out, y)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -138,13 +143,15 @@ def train(
                 running_loss_train += loss.item() * len(scans)
                 pbar_t.update(len(scans))
 
+                # todo: compute other metrics
+
                 if max_train_samples is not None:
                     if ix * batch_size >= max_train_samples:
                         tqdm.tqdm.write(f'exceeded max_train_samples: {max_train_samples}')
                         break
 
-        em['loss_train'].append(running_loss_train / actual_n_train)
-        tqdm.tqdm.write(f'loss train: {em["loss_train"][-1]:.3f}')
+        em['bce_train'].append(running_loss_train / actual_n_train)
+        tqdm.tqdm.write(f'loss train: {em["bce_train"][-1]:.3f}')
 
         if checkpoints_dp is not None:
             os.makedirs(checkpoints_dp, exist_ok=True)
@@ -153,61 +160,45 @@ def train(
                 os.path.join(checkpoints_dp, f'cp_epoch_{cur_epoch}.pth')
             )
 
-        ############# validate #############
-        net.eval()
+        # ----------- validation ----------- #
         valid_gen = get_scans_and_labels_batches(
             indices_valid, scans_dp, labels_dp, None, to_shuffle=False)
-        running_loss_valid = 0
-        running_dice_score = 0
+        evaluation_res = evaluate_net(
+            net, valid_gen, {'bce': loss_func, 'dice': my_dice_score},
+            actual_n_valid, device, max_valid_samples, f'epoch {cur_epoch}. valid')
 
-        with torch.no_grad():
-            with tqdm.tqdm(total=actual_n_valid, desc=f'epoch {cur_epoch + 1}. valid',
-                           unit='scan', leave=True) as pbar_v:
-                for ix, (s, l, scan_ix) in enumerate(valid_gen, start=1):
-                    x = torch.tensor(s, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
-                    y = torch.tensor(l, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
-                    out = net(x)
-                    out_bin = (out > 0.5).float()
+        em['bce_valid'].append(evaluation_res['bce']['mean'])
+        em['dice_valid'].append(evaluation_res['dice']['mean'])
 
-                    loss = criterion(out_bin, y)
-                    running_loss_valid += loss.item()
-                    ds = my_dice_score(y, out_bin).item()
-                    running_dice_score += ds
-
-                    pbar_v.update()
-
-                    if max_valid_samples is not None:
-                        if ix >= max_valid_samples:
-                            tqdm.tqdm.write(f'exceeded max_valid_batches: {max_valid_samples}')
-                            break
-
-        em['loss_valid'].append(running_loss_valid / actual_n_valid)
-        em['dice_score'].append(running_dice_score / actual_n_valid)
-        tqdm.tqdm.write(f'loss valid: {em["loss_valid"][-1]:.3f}')
-        tqdm.tqdm.write(f'dice score valid: {em["dice_score"][-1]:.3f}')
-
-        if em['dice_score'][-1] > best_dice_score:
-            best_dice_score = em['dice_score'][-1]
-            best_net_wts = copy.deepcopy(net.state_dict())
-            best_epoch = cur_epoch
-            es_cnt = 0
-        elif em['dice_score'][-1] < best_dice_score - es_tolerance:
-            es_cnt += 1
-        if es_cnt >= es_patience:
-            tqdm.tqdm.write(separator)
-            tqdm.tqdm.write(f'Early Stopping! no imporvements for {es_patience} epochs')
-            break
+        for x in sorted(em.keys()):
+            if 'valid' in x:
+                tqdm.tqdm.write(f'{x}: {em[x][-1] : .3f}')
 
         epoch_time = time.time() - epoch_time_start
         tqdm.tqdm.write(f'epoch completed in {epoch_time // 60}m {epoch_time % 60 : .2f}s')
 
-    # load the best model from all the epochs
+        # ----------- early stopping ----------- #
+        if em[f'{loss_name}_valid'][-1] < best_loss_valid - es_tolerance:
+            best_loss_valid = em[f'{loss_name}_valid'][-1]
+            best_net_wts = copy.deepcopy(net.state_dict())
+            best_epoch_ix = cur_epoch
+            es_cnt = 0
+            tqdm.tqdm.write(f'epoch {cur_epoch}: new best loss valid: {best_loss_valid : .3f}')
+        else:
+            es_cnt += 1
+
+        if es_cnt >= es_patience:
+            tqdm.tqdm.write(separator)
+            tqdm.tqdm.write(f'Early Stopping! no improvements for {es_patience} epochs for {loss_name} metric')
+            break
+
+    # ----------- load best model ----------- #
     net.load_state_dict(best_net_wts)
 
     print(separator)
-    train_time = time.time() - since
+    train_time = time.time() - train_time_start
     print(f'training completed in {train_time // 60}m {train_time % 60 : .2f}s')
-    print(f'best dice score: {best_dice_score:.3f}, best epoch: {best_epoch}')
+    print(f'best loss valid: {best_loss_valid : .3f}, best epoch: {best_epoch_ix}')
 
     return em
 
@@ -226,18 +217,17 @@ def main():
 
     net = UNet(n_channels=1, n_classes=1)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    criterion = nn.BCELoss(reduction='mean')
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
     em = train(
         indices_train, indices_valid,
         scans_dp, labels_dp,
-        net, criterion, optimizer, device,
-        batch_size=16, n_epochs=10,
-        max_train_samples=32, max_valid_samples=32)
+        net, optimizer, device,
+        batch_size=4, n_epochs=4,
+        max_train_samples=20, max_valid_samples=5)
 
-    fig, ax = plot_train_stats(em['loss_train'], em['loss_valid'], em['dice_score'])
-    fig.savefig('results/training results.png')
+    fig, ax = plot_learning_curves(em)
+    fig.savefig('results/learning_curves.png')
 
     print(separator)
     print('cuda memory stats:')
@@ -253,9 +243,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
 
 """## visualize results"""
 # 
