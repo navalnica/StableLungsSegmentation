@@ -69,11 +69,12 @@ class FocalLoss(nn.Module):
                 "input and target must be in the same device. Got: {}".format(
                     input.device, target.device))
 
-        one = torch.tensor(1.)
-        lhs = target * input
-        rhs = (one - target) * (one - input)
+        # clip input values to prevent large numbers in the result
+        input_c = torch.clamp(input, self.eps, 1 - self.eps)
+        one = torch.tensor(1., device=input.device)
+        lhs = target * input_c
+        rhs = (one - target) * (one - input_c)
         preds_t = lhs + rhs
-        # todo: try to add clipping with EPS if unstable
         gamma_device = self.gamma.to(input.device)
         weight = torch.pow(one - preds_t, gamma_device)
         focal = -self.alpha * weight * torch.log(preds_t)

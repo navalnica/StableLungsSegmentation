@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch.nn import MSELoss
 
 from losses import FocalLoss
 
@@ -10,6 +11,16 @@ def my_loss(output, target):
 
 
 if __name__ == '__main__':
+    x = torch.randn((4, 6), dtype=torch.float32, requires_grad=True)
+    w = torch.randn((6, 4), dtype=torch.float32)
+    true = torch.randn((4, 4), dtype=torch.float32, requires_grad=True)
+    c = torch.matmul(x, w)
+    cc = torch.clamp(c, 0.05, 0.15)
+    loss = MSELoss()
+    value = loss(cc, true)
+    value.backward()
+
+
     true = np.array([
         [
             [0, 1, 0],

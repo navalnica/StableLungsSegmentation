@@ -109,7 +109,7 @@ def calc_ct_body_mask(volume):
     return img_vol_
 
 
-def preprocess_scan(scan, labels, zoom_factor=0.25, aug_cnt=0, to_log=False):
+def preprocess_scan(scan, labels, aug_cnt, zoom_factor=0.25, to_log=False):
     """
     preprocess CT-scans: segment body, filter and augment slices, binarize lung labels.
     :param aug_cnt: number of augmentations per slice
@@ -152,8 +152,7 @@ def preprocess_scan(scan, labels, zoom_factor=0.25, aug_cnt=0, to_log=False):
             labels_s = zoom_nearest(labels_s, zoom_factor)
 
         if aug_cnt > 0:
-            slice_augs, labels_augs = augmentations.augment_slice_with_elastic_transform(
-                filtered_s, labels_s, aug_cnt)
+            slice_augs, labels_augs = augmentations.augment_slice(filtered_s, labels_s, aug_cnt)
             res_scan.extend(slice_augs)
             res_labels.extend(labels_augs)
         else:

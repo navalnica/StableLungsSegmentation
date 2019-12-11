@@ -87,17 +87,17 @@ class outconv(nn.Module):
         return x
 
 
-def my_dice_score(true, pred):
-    eps = 0.00001
-    a = true.view(-1)
-    b = pred.view(-1)
-    intersection = torch.dot(a, b)
-    union = torch.sum(a) + torch.sum(b)
-    if union == 0:
-        intersection = eps
-    # print(f'intersection: {intersection}. union: {union}')
-    dice = 2 * intersection / (union + 2 * eps)
-    return dice
+# def my_dice_score(true, pred):
+#     eps = 0.00001
+#     a = true.view(-1)
+#     b = pred.view(-1)
+#     intersection = torch.dot(a, b)
+#     union = torch.sum(a) + torch.sum(b)
+#     if union == 0:
+#         intersection = eps
+#     # print(f'intersection: {intersection}. union: {union}')
+#     dice = 2 * intersection / (union + 2 * eps)
+#     return dice
 
 
 def evaluate_net(
@@ -128,7 +128,6 @@ def evaluate_net(
                 out = net(x)
 
                 for m_name, m_func in metrics.items():
-                    # m_value = m_func(y, out).item() # TODO
                     m_value = m_func(y, out).item()
                     metrics_res[m_name]['mean'] += m_value
                     metrics_res[m_name]['list'].append((slice_ix, m_value))

@@ -3,12 +3,10 @@
 # * 123, 163, 206 - тэлеграм
 # -----------------
 # дарабіць
-# * праверыць разрвывы ў unwanted indices
 # * збалансаваць колькасць выпадкаў з захворваннем у train і valid
-# * паспрабаваць focal loss, dice loss
 # * паспрабаваць зменшыць колькасць фільтраў пры згортванні
 # * пашукаць альтэрнатывы для BatchNorm
-# * паспрабаваць розныя тыпы аўгментацыяў
+
 import os
 import re
 import shutil
@@ -21,7 +19,7 @@ import preprocessing
 import utils
 
 
-def preprocessing_pipeline(scans_dict, res_dp, zoom_factor=0.25, aug_cnt=2):
+def preprocessing_pipeline(scans_dict, res_dp, aug_cnt, zoom_factor=0.25):
     if os.path.isdir(res_dp):
         print(f'will remove dir {res_dp}')
         shutil.rmtree(res_dp)
@@ -35,7 +33,7 @@ def preprocessing_pipeline(scans_dict, res_dp, zoom_factor=0.25, aug_cnt=2):
             scan = nibabel.load(v['initial']).get_data()
             labels = nibabel.load(v['fixed']).get_data()
             res_scan, res_labels, unwanted_indices = preprocessing.preprocess_scan(
-                scan, labels, zoom_factor=zoom_factor, aug_cnt=aug_cnt)
+                scan, labels, aug_cnt=aug_cnt, zoom_factor=zoom_factor)
 
             # check scans to have continuous lung mask
             breaks_cnt = np.sum(np.diff(unwanted_indices) > 1)
@@ -47,9 +45,8 @@ def preprocessing_pipeline(scans_dict, res_dp, zoom_factor=0.25, aug_cnt=2):
 
             pbar.update()
 
-
-            if ix >= 10:
-                break
+            # if ix >= 10:
+            #     break
 
 
 def main():
@@ -70,7 +67,7 @@ def main():
     print(sorted(initial_filenames.keys() - resegm_filenames.keys()))
     print(sorted(resegm_filenames.keys() - initial_filenames.keys()))
 
-    fixed_dp = os.path.realpath(os.path.join(datasets_dp, '../test_labels_fixed'))
+    fixed_dp = os.path.realpath(os.path.join(datasets_dp, '../resegm2_fixed_nii'))
 
     # print(utils.separator)
     # print('fixing resegm2_nii labels')
@@ -87,9 +84,10 @@ def main():
 
     print(utils.separator)
     print('preprocessing scans and labels')
-    res_dp = os.path.realpath(os.path.join(datasets_dp, '../test_preprocessed'))
+    res_dp = os.path.realpath(os.path.join(datasets_dp, '../preprocessed_z0.25'))
     preprocessing_pipeline(scans_dict, res_dp, aug_cnt=0)
 
+    # test
     k = '155'
     print(utils.separator)
     print(f'test: loading scan {k}')

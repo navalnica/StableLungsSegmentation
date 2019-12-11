@@ -90,14 +90,14 @@ def gen_aug_vector():
     h_flips = np.arange(2)
     to_deform = np.arange(2)
     clahe_coeffs = np.arange(1, 3)
-    inten_shifts = np.arange(-16, 16)
+    inten_shifts = np.arange(-16, 17)
 
     aug_vector = [0, 0, 0, 0, 0, 0]
     #     aug_vector[0] = np.random.choice(angles, 1)[0]
     #     aug_vector[1] = np.random.randint(0, 2)
     #     aug_vector[2] = np.random.randint(0, 2)
     aug_vector[3] = 1  # elastic transform
-    #     aug_vector[4] = np.random.choice(intent_shifts, 1)[0]
+    aug_vector[4] = np.random.choice(inten_shifts, 1)[0]
     # aug_vector[5] = np.random.choice(clahe_coeffs, 1)[0]
     return aug_vector
 
@@ -132,9 +132,10 @@ def apply_aug(_img, _index, _value):
             _img = elastic_transform(_img, _img.shape[1] * 0.4, _img.shape[1] * 0.07, _img.shape[1] * 0.07)
         return _img
     if _index == 4:  # intensity shift
-        # _tim = _img[:, :, :-k_size]
+        _tim = _img[:, :, :-k_size]
         # _tim[_tim > 1] = _tim[_tim > 1] + _value
-        # _img[:, :, :-k_size] = _tim
+        _tim += _value
+        _img[:, :, :-k_size] = _tim
         return _img
 
 
@@ -160,17 +161,22 @@ def augment(_img, aug_vector):
 #    mask1_ = im_s2[:, :, -1:].astype(np.uint8)
 
 
-def augment_slice_with_elastic_transform(scan, labels, aug_cnt=5):
+def augment_slice(scan, labels, aug_cnt=3):
     """
     augment 2D slices from scan and labels
     :return: list of augmented images for scan slice and for labels slice
     """
+
+    if aug_cnt < 0:
+        raise ValueError(f'aug_cnt must be >= 0. passed {aug_cnt}')
+
     scans_aug = [scan]
     labels_aug = [labels]
 
     im_s = np.dstack([scan, labels])
     for i in range(aug_cnt):
         aug_vector = gen_aug_vector()
+        # print(f'i: {i}. aug vector: {aug_vector}')
         im_s_copy = im_s.copy()
         im_s_aug = augment(im_s_copy, aug_vector)
         scan_t = im_s_aug[:, :, 0]

@@ -28,9 +28,8 @@ plt.rcParams['image.cmap'] = 'gray'
 
 
 def get_train_valid_indices(
-        scans_dp, labels_dp, val_percent=0.15,
-        restore_prev_z_dims=True, random_state=17,
-        load_existing_train_valid_split=False
+        scans_dp, labels_dp, val_percent=0.15, restore_prev_z_dims=True,
+        load_existing_train_valid_split=False, random_state=17,
 ):
     scans_fns = sorted(os.listdir(scans_dp))
     labels_fns = sorted(os.listdir(labels_dp))
@@ -77,22 +76,20 @@ def get_train_valid_indices(
 
 
 def train(
-        indices_train, indices_valid,
-        scans_dp, labels_dp,
-        net, optimizer, device,
-        batch_size=4, n_epochs=10,
+        indices_train, indices_valid, scans_dp, labels_dp,
+        net, optimizer, source_slices_per_batch, aug_cnt, device, n_epochs,
         max_train_samples=None, max_valid_samples=None,
         checkpoints_dp='results/model_checkpoints'
 ):
     actual_n_train = max_train_samples or len(indices_train)
     actual_n_valid = max_valid_samples or len(indices_valid)
+    batch_size = source_slices_per_batch * (1 + aug_cnt)
 
     # early stopping variables
     es_cnt = 0
     es_tolerance = 0.001
     es_patience = 4
 
-    # loss_func = nn.BCELoss(reduction='mean')
     metrics = [nn.BCELoss(reduction='mean'), NegDiceLoss(), FocalLoss(alpha=0.25, gamma=2, reduction='mean')]
     metrics = {type(func).__name__: func for func in metrics}
     em = {m: {'train': [], 'valid': []} for m in metrics.keys()}  # epoch metrics
@@ -116,10 +113,12 @@ def train(
           f'learning rate: {optimizer.defaults["lr"]}\n'
           f'momentum: {optimizer.defaults["momentum"]}\n'
           f'number of epochs: {n_epochs}\n'
-          f'batch size: {batch_size}\n'
           f'actual train samples count: {actual_n_train}\n'
           f'actual valid samples count: {actual_n_valid}\n'
           f'device: {device}\n'
+          f'source slices per batch: {source_slices_per_batch}\n'
+          f'augmentations per source slice: {aug_cnt}\n'
+          f'resultant batch size: {batch_size}\n'
           f'checkpoints dir: {os.path.abspath(checkpoints_dp)}\n'
           )
 
@@ -133,7 +132,7 @@ def train(
         # ----------- train ----------- #
         net.train()
         train_gen = get_scans_and_labels_batches(
-            indices_train, scans_dp, labels_dp, batch_size)
+            indices_train, scans_dp, labels_dp, source_slices_per_batch, aug_cnt, to_shuffle=True)
 
         for m_name, m_dict in em.items():
             m_dict['train'].append(0)
@@ -145,8 +144,12 @@ def train(
                 y = torch.tensor(labels, dtype=torch.float, device=device).unsqueeze(1)
 
                 out = net(x)
+
                 min, max = torch.min(out).item(), torch.max(out).item()
-                assert min > 0 and max < 1
+                if min < 0 or max > 1:
+                    tqdm.tqdm.write(f'\n*** WARN ***\nbatch scans: {scans_ix}\nmin: {min}\tmax: {max}')
+                    continue
+
                 loss = metrics[loss_name](out, y)
 
                 optimizer.zero_grad()
@@ -182,7 +185,7 @@ def train(
 
         # ----------- validation ----------- #
         valid_gen = get_scans_and_labels_batches(
-            indices_valid, scans_dp, labels_dp, None, to_shuffle=False)
+            indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
         evaluation_res = evaluate_net(
             net, valid_gen, metrics,
             actual_n_valid, device, f'epoch {cur_epoch}. valid')
@@ -221,7 +224,9 @@ def train(
 
 
 def main():
-    cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25_a5'
+    # cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25'
+    cur_dataset_dp = '/media/data/datasets/trafimau_lungs/preprocessed_z0.25'
+
     scans_dp = os.path.join(f'{cur_dataset_dp}/scans')
     labels_dp = os.path.join(f'{cur_dataset_dp}/labels')
 
@@ -230,27 +235,31 @@ def main():
     os.makedirs('results', exist_ok=True)
 
     indices_train, indices_valid = get_train_valid_indices(
-        scans_dp, labels_dp, restore_prev_z_dims=True, load_existing_train_valid_split=True)
+        scans_dp, labels_dp, restore_prev_z_dims=True, load_existing_train_valid_split=False)
 
     net = UNet(n_channels=1, n_classes=1)
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # device = 'cuda:0'
+    device = 'cuda:1'
+
+    # load weights
+    # net.to(device=device)
+    # state_dict = torch.load('results/model_checkpoints/cp_epoch_9.pth')
+    # net.load_state_dict(state_dict)
 
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     em = train(
-        indices_train, indices_valid,
-        scans_dp, labels_dp,
-        net, optimizer, device,
-        batch_size=4, n_epochs=4,
-        max_train_samples=20, max_valid_samples=5)
+        indices_train, indices_valid, scans_dp, labels_dp, net, optimizer,
+        source_slices_per_batch=3, aug_cnt=3, device=device, n_epochs=4,
+        max_train_samples=4000, max_valid_samples=500)
 
     fig, ax = plot_learning_curves(em)
     fig.savefig('results/learning_curves.png')
-    #
+
     # loss_func = nn.BCELoss(reduction='mean')
     # todo: get top losses on the full valid dataset
     # evaluate_segmentation(
     #     net, loss_func, 'results/existing_checkpoints/cp_epoch_9.pth',
-    #     indices_valid[:100], scans_dp, labels_dp)
+    #     indices_valid[:100], scans_dp, labels_dp, device=device)
 
     print(separator)
     print('cuda memory stats:')

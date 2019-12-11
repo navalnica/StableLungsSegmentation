@@ -11,6 +11,8 @@ import torch
 import tqdm
 from tabulate import tabulate
 
+import augmentations
+
 separator = f'\n{"=" * 20}'
 
 
@@ -123,10 +125,17 @@ def get_scans_z_dimensions(scans_fns, scans_dp, restore_prev=True):
     return scans_z
 
 
-def get_scans_and_labels_batches(indices, scans_dp, labels_dp, batch_size, to_shuffle=True):
-    '''
-    indices: tuple (filename, z_index)
-    '''
+def get_scans_and_labels_batches(
+        indices, scans_dp, labels_dp,
+        source_slices_per_batch, aug_cnt, to_shuffle):
+    """
+    create generator that reads slices from numpy array and performs augmentations
+    :param indices: tuple (filename, z_index)
+    :param source_slices_per_batch: number of slices without augmentations. if None to yield scans one by one
+    :param aug_cnt: number of augmentations per scan. has no effect if batch_size is None
+    :param to_shuffle: whether to shuffle passed indices
+    :return:
+    """
 
     if to_shuffle:
         np.random.shuffle(indices)
@@ -138,16 +147,28 @@ def get_scans_and_labels_batches(indices, scans_dp, labels_dp, batch_size, to_sh
     scans_gen = foo(indices, scans_dp)
     labels_gen = foo(indices, labels_dp)
 
-    if batch_size is not None and batch_size > 0:
+    if source_slices_per_batch is not None:
         # yield by batches
+        batch_size = source_slices_per_batch * (1 + aug_cnt)
         scans_batch, labels_batch, ix_batch = [], [], []
-        for en_ix, (s, l, ix) in enumerate(zip(scans_gen, labels_gen, indices)):
-            scans_batch.append(s)
-            labels_batch.append(l)
-            ix_batch.append(ix)
-            if (en_ix + 1) % batch_size == 0:
+        cnt = 0
+        for s, l, ix in zip(scans_gen, labels_gen, indices):
+            scan_augs, labels_augs = augmentations.augment_slice(s, l, aug_cnt)
+
+            # fig, ax = show_slices(scan_augs);
+            # fig.savefig('scan_augs.png')
+            # fig, ax = show_slices(labels_augs);
+            # fig.savefig('labels_augs.png')
+
+            scans_batch.extend(scan_augs)
+            labels_batch.extend(labels_augs)
+            ix_batch.extend([ix] * (1 + aug_cnt))
+            cnt += aug_cnt + 1
+
+            if cnt % batch_size == 0:
                 yield (scans_batch, labels_batch, ix_batch)
                 scans_batch, labels_batch, ix_batch = [], [], []
+                cnt = 0
         if len(scans_batch) > 0:
             yield (scans_batch, labels_batch, ix_batch)
     else:
