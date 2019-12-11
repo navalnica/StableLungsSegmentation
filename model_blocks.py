@@ -126,11 +126,10 @@ def evaluate_net(
                 x = torch.tensor(slice, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
                 y = torch.tensor(labels, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
                 out = net(x)
-                out_bin = (out > 0.5).float()
 
                 for m_name, m_func in metrics.items():
                     # m_value = m_func(y, out).item() # TODO
-                    m_value = m_func(y, out_bin).item()
+                    m_value = m_func(y, out).item()
                     metrics_res[m_name]['mean'] += m_value
                     metrics_res[m_name]['list'].append((slice_ix, m_value))
 

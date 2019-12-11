@@ -73,7 +73,7 @@ class FocalLoss(nn.Module):
         lhs = target * input
         rhs = (one - target) * (one - input)
         preds_t = lhs + rhs
-        # todo: add clipping with EPS if unstable
+        # todo: try to add clipping with EPS if unstable
         gamma_device = self.gamma.to(input.device)
         weight = torch.pow(one - preds_t, gamma_device)
         focal = -self.alpha * weight * torch.log(preds_t)
