@@ -82,16 +82,14 @@ def copy_checkpoints_to_gdrive(checkpoints_dp):
 
 
 def plot_learning_curves(epoch_metrics):
-    metrics = np.unique([x.split('_')[0] for x in epoch_metrics.keys()])
-    n_epochs = max([len(l) for l in epoch_metrics.values()])
+    n_epochs = len(list(epoch_metrics.values())[0]['train'])
     x = np.arange(1, n_epochs + 1)
-    fig, ax = plt.subplots(1, len(metrics), figsize=(6 * len(metrics), 5), squeeze=False)
+    fig, ax = plt.subplots(1, len(epoch_metrics), figsize=(6 * len(epoch_metrics), 5), squeeze=False)
 
-    for m, _ax in zip(metrics, ax.flatten()):
-        if len(epoch_metrics[f'{m}_train']) == len(x):
-            _ax.plot(x, epoch_metrics[f'{m}_train'], marker='o', label='train')
-        _ax.plot(x, epoch_metrics[f'{m}_valid'], marker='o', label='valid')
-        _ax.set_title(m)
+    for (m_name, m_dict), _ax in zip(epoch_metrics.items(), ax.flatten()):
+        _ax.plot(x, epoch_metrics[m_name]['train'], marker='o', label='train')
+        _ax.plot(x, epoch_metrics[m_name]['valid'], marker='o', label='valid')
+        _ax.set_title(m_name)
         _ax.grid()
         _ax.legend()
 

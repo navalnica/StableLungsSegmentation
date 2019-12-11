@@ -13,7 +13,9 @@ import copy
 import time
 
 from sklearn.model_selection import train_test_split
+from torch import optim
 
+from losses import *
 from model_blocks import *
 from unet import UNet
 from utils import *
@@ -80,7 +82,7 @@ def train(
         net, optimizer, device,
         batch_size=4, n_epochs=10,
         max_train_samples=None, max_valid_samples=None,
-        checkpoints_dp='./model_checkpoints'
+        checkpoints_dp='results/model_checkpoints'
 ):
     actual_n_train = max_train_samples or len(indices_train)
     actual_n_valid = max_valid_samples or len(indices_valid)
@@ -90,12 +92,17 @@ def train(
     es_tolerance = 0.001
     es_patience = 4
 
-    loss_func = nn.BCELoss(reduction='mean')
+    # loss_func = nn.BCELoss(reduction='mean')
+    metrics = [nn.BCELoss(reduction='mean'), NegDiceLoss(), FocalLoss(alpha=0.25, gamma=2, reduction='mean')]
+    metrics = {type(func).__name__: func for func in metrics}
+    em = {m: {'train': [], 'valid': []} for m in metrics.keys()}  # epoch metrics
 
-    # epoch metrics
-    em = {m: [] for m in ['bce_train', 'bce_valid', 'dice_train', 'dice_valid']}
-    loss_name = 'bce'
-    best_loss_valid = 1e+100
+    # select loss function name
+    loss_name = type(nn.BCELoss(reduction='mean')).__name__
+    # loss_name = type(NegDiceLoss()).__name__
+    # loss_name = type(FocalLoss(alpha=0.25, gamma=2, reduction='mean')).__name__
+
+    best_loss_valid = 1e+30
     best_epoch_ix = 0
     best_net_wts = copy.deepcopy(net.state_dict())
 
@@ -104,7 +111,7 @@ def train(
     print(separator)
     print('start of the training')
     print(f'parameters:\n\n'
-          f'loss function: {type(loss_func).__name__}\n'
+          f'loss function: {loss_name}\n'
           f'optimizer: {type(optimizer).__name__}\n'
           f'learning rate: {optimizer.defaults["lr"]}\n'
           f'momentum: {optimizer.defaults["momentum"]}\n'
@@ -127,7 +134,9 @@ def train(
         net.train()
         train_gen = get_scans_and_labels_batches(
             indices_train, scans_dp, labels_dp, batch_size)
-        running_loss_train = 0
+
+        for m_name, m_dict in em.items():
+            m_dict['train'].append(0)
 
         with tqdm.tqdm(total=actual_n_train, desc=f'epoch {cur_epoch}. train',
                        unit='scan', leave=True) as pbar_t:
@@ -136,26 +145,33 @@ def train(
                 y = torch.tensor(labels, dtype=torch.float, device=device).unsqueeze(1)
 
                 out = net(x)
-                loss = loss_func(out, y)
+                min, max = torch.min(out).item(), torch.max(out).item()
+                assert min > 0 and max < 1
+                loss = metrics[loss_name](out, y)
 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
                 # multiply to find sum of losses for all the batch items.
-                # len(scans) != batch_size for the last batch.
-                running_loss_train += loss.item() * len(scans)
-                pbar_t.update(len(scans))
+                # use len(scans) instead of batch_size because they are not equal for the last batch
+                em[loss_name]['train'][-1] += loss.item() * len(scans)
 
-                # todo: compute other metrics
+                with torch.no_grad():
+                    for m_name, m_func in metrics.items():
+                        value = m_func(out, y)
+                        em[m_name]['train'][-1] += value.item() * len(scans)
+
+                pbar_t.update(len(scans))
 
                 if max_train_samples is not None:
                     if ix * batch_size >= max_train_samples:
                         tqdm.tqdm.write(f'exceeded max_train_samples: {max_train_samples}')
                         break
 
-        em['bce_train'].append(running_loss_train / actual_n_train)
-        tqdm.tqdm.write(f'loss train: {em["bce_train"][-1]:.3f}')
+        for m_name, m_dict in em.items():
+            m_dict['train'][-1] /= actual_n_train
+            tqdm.tqdm.write(f'{m_name} train: {m_dict["train"][-1] : .3f}')
 
         if checkpoints_dp is not None:
             os.makedirs(checkpoints_dp, exist_ok=True)
@@ -168,22 +184,19 @@ def train(
         valid_gen = get_scans_and_labels_batches(
             indices_valid, scans_dp, labels_dp, None, to_shuffle=False)
         evaluation_res = evaluate_net(
-            net, valid_gen, {'bce': loss_func, 'dice': my_dice_score},
+            net, valid_gen, metrics,
             actual_n_valid, device, f'epoch {cur_epoch}. valid')
 
-        em['bce_valid'].append(evaluation_res['bce']['mean'])
-        em['dice_valid'].append(evaluation_res['dice']['mean'])
-
-        for x in sorted(em.keys()):
-            if 'valid' in x:
-                tqdm.tqdm.write(f'{x}: {em[x][-1] : .3f}')
+        for m_name, m_dict in em.items():
+            m_dict['valid'].append(evaluation_res[m_name]['mean'])
+            tqdm.tqdm.write(f'{m_name} valid: {m_dict["valid"][-1] : .3f}')
 
         epoch_time = time.time() - epoch_time_start
         tqdm.tqdm.write(f'epoch completed in {epoch_time // 60}m {epoch_time % 60 : .2f}s')
 
         # ----------- early stopping ----------- #
-        if em[f'{loss_name}_valid'][-1] < best_loss_valid - es_tolerance:
-            best_loss_valid = em[f'{loss_name}_valid'][-1]
+        if em[loss_name]['valid'][-1] < best_loss_valid - es_tolerance:
+            best_loss_valid = em[loss_name]['valid'][-1]
             best_net_wts = copy.deepcopy(net.state_dict())
             best_epoch_ix = cur_epoch
             es_cnt = 0
@@ -222,27 +235,26 @@ def main():
     net = UNet(n_channels=1, n_classes=1)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-    # em = train(
-    #     indices_train, indices_valid,
-    #     scans_dp, labels_dp,
-    #     net, optimizer, device,
-    #     batch_size=4, n_epochs=4,
-    #     max_train_samples=20, max_valid_samples=5)
-    #
-    # fig, ax = plot_learning_curves(em)
-    # fig.savefig('results/learning_curves.png')
+    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    em = train(
+        indices_train, indices_valid,
+        scans_dp, labels_dp,
+        net, optimizer, device,
+        batch_size=4, n_epochs=4,
+        max_train_samples=20, max_valid_samples=5)
 
-    loss_func = nn.BCELoss(reduction='mean')
+    fig, ax = plot_learning_curves(em)
+    fig.savefig('results/learning_curves.png')
+    #
+    # loss_func = nn.BCELoss(reduction='mean')
     # todo: get top losses on the full valid dataset
-    evaluate_segmentation(
-        net, loss_func, 'results/existing_checkpoints/cp_epoch_9.pth',
-        indices_valid[:100], scans_dp, labels_dp)
+    # evaluate_segmentation(
+    #     net, loss_func, 'results/existing_checkpoints/cp_epoch_9.pth',
+    #     indices_valid[:100], scans_dp, labels_dp)
 
     print(separator)
     print('cuda memory stats:')
     print_cuda_memory_stats()
-
 
 
 if __name__ == '__main__':
