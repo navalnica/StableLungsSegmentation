@@ -1,11 +1,6 @@
 """
 TODO
-* build evaluation pipeline
-* change loss function to dice or focal loss
 ------------------
-* try to validate in batches
-* unite train and validation pipeline in single construction
-* compare offline augmentation with online
 * compare small batches vs large
 """
 
@@ -78,26 +73,31 @@ def get_train_valid_indices(
 def train(
         indices_train, indices_valid, scans_dp, labels_dp,
         net, optimizer, source_slices_per_batch, aug_cnt, device, n_epochs,
-        max_train_samples=None, max_valid_samples=None,
         checkpoints_dp='results/model_checkpoints'
 ):
-    actual_n_train = max_train_samples or len(indices_train)
-    actual_n_valid = max_valid_samples or len(indices_valid)
+    if os.path.isdir(checkpoints_dp):
+        print(f'checkpoints dir "{checkpoints_dp}" exists. will remove and create new one')
+        shutil.rmtree(checkpoints_dp)
+    os.makedirs(checkpoints_dp, exist_ok=True)
+
+    n_train = len(indices_train) * (1 + aug_cnt)
+    n_valid = len(indices_valid)
     batch_size = source_slices_per_batch * (1 + aug_cnt)
 
     # early stopping variables
     es_cnt = 0
     es_tolerance = 0.001
-    es_patience = 4
+    es_patience = 6
 
-    metrics = [nn.BCELoss(reduction='mean'), NegDiceLoss(), FocalLoss(alpha=0.25, gamma=2, reduction='mean')]
+    metrics = [nn.BCELoss(reduction='mean'), NegDiceLoss(), FocalLoss(alpha=0.75, gamma=4, reduction='mean')]
     metrics = {type(func).__name__: func for func in metrics}
     em = {m: {'train': [], 'valid': []} for m in metrics.keys()}  # epoch metrics
 
-    # select loss function name
+    # select the loss function name
     loss_name = type(nn.BCELoss(reduction='mean')).__name__
     # loss_name = type(NegDiceLoss()).__name__
-    # loss_name = type(FocalLoss(alpha=0.25, gamma=2, reduction='mean')).__name__
+    # loss_name = type(FocalLoss(alpha=0.75, gamma=4, reduction='mean')).__name__
+    em['loss_name'] = loss_name
 
     best_loss_valid = 1e+30
     best_epoch_ix = 0
@@ -113,12 +113,12 @@ def train(
           f'learning rate: {optimizer.defaults["lr"]}\n'
           f'momentum: {optimizer.defaults["momentum"]}\n'
           f'number of epochs: {n_epochs}\n'
-          f'actual train samples count: {actual_n_train}\n'
-          f'actual valid samples count: {actual_n_valid}\n'
           f'device: {device}\n'
           f'source slices per batch: {source_slices_per_batch}\n'
           f'augmentations per source slice: {aug_cnt}\n'
           f'resultant batch size: {batch_size}\n'
+          f'actual train samples count: {n_train}\n'
+          f'actual valid samples count: {n_valid}\n'
           f'checkpoints dir: {os.path.abspath(checkpoints_dp)}\n'
           )
 
@@ -135,9 +135,10 @@ def train(
             indices_train, scans_dp, labels_dp, source_slices_per_batch, aug_cnt, to_shuffle=True)
 
         for m_name, m_dict in em.items():
-            m_dict['train'].append(0)
+            if type(m_dict) == type(dict()):
+                m_dict['train'].append(0)
 
-        with tqdm.tqdm(total=actual_n_train, desc=f'epoch {cur_epoch}. train',
+        with tqdm.tqdm(total=n_train, desc=f'epoch {cur_epoch}. train',
                        unit='scan', leave=True) as pbar_t:
             for ix, (scans, labels, scans_ix) in enumerate(train_gen, start=1):
                 x = torch.tensor(scans, dtype=torch.float, device=device).unsqueeze(1)
@@ -162,37 +163,32 @@ def train(
 
                 with torch.no_grad():
                     for m_name, m_func in metrics.items():
-                        value = m_func(out, y)
-                        em[m_name]['train'][-1] += value.item() * len(scans)
+                        if not loss_name in m_name:
+                            value = m_func(out, y)
+                            em[m_name]['train'][-1] += value.item() * len(scans)
 
-                pbar_t.update(len(scans))
+                pbar_t.update(len(x))
 
-                if max_train_samples is not None:
-                    if ix * batch_size >= max_train_samples:
-                        tqdm.tqdm.write(f'exceeded max_train_samples: {max_train_samples}')
-                        break
 
         for m_name, m_dict in em.items():
-            m_dict['train'][-1] /= actual_n_train
-            tqdm.tqdm.write(f'{m_name} train: {m_dict["train"][-1] : .3f}')
+            if type(m_dict) == type(dict()):
+                m_dict['train'][-1] /= n_train
+                tqdm.tqdm.write(f'{m_name} train: {m_dict["train"][-1] : .3f}')
 
         if checkpoints_dp is not None:
-            os.makedirs(checkpoints_dp, exist_ok=True)
             torch.save(
                 net.state_dict(),
-                os.path.join(checkpoints_dp, f'cp_epoch_{cur_epoch}.pth')
+                os.path.join(checkpoints_dp, f'cp_{loss_name}_epoch_{cur_epoch}.pth')
             )
 
         # ----------- validation ----------- #
-        valid_gen = get_scans_and_labels_batches(
-            indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
-        evaluation_res = evaluate_net(
-            net, valid_gen, metrics,
-            actual_n_valid, device, f'epoch {cur_epoch}. valid')
+        valid_gen = get_scans_and_labels_batches(indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
+        evaluation_res = evaluate_net(net, valid_gen, metrics, n_valid, device, f'epoch {cur_epoch}. valid')
 
         for m_name, m_dict in em.items():
-            m_dict['valid'].append(evaluation_res[m_name]['mean'])
-            tqdm.tqdm.write(f'{m_name} valid: {m_dict["valid"][-1] : .3f}')
+            if type(m_dict) == type(dict()):
+                m_dict['valid'].append(evaluation_res[m_name]['mean'])
+                tqdm.tqdm.write(f'{m_name} valid: {m_dict["valid"][-1] : .3f}')
 
         epoch_time = time.time() - epoch_time_start
         tqdm.tqdm.write(f'epoch completed in {epoch_time // 60}m {epoch_time % 60 : .2f}s')
@@ -212,8 +208,20 @@ def train(
             tqdm.tqdm.write(f'Early Stopping! no improvements for {es_patience} epochs for {loss_name} metric')
             break
 
+    # ----------- save metrics ----------- #
+    em_dump_fp = f'results/epoch_metrics_{loss_name}.pickle'
+    print(separator)
+    print(f'storing epoch metrics dict in "{em_dump_fp}"')
+    with open(em_dump_fp, 'wb') as fout:
+        pickle.dump(em, fout)
+
     # ----------- load best model ----------- #
     net.load_state_dict(best_net_wts)
+    if checkpoints_dp is not None:
+        torch.save(
+            net.state_dict(),
+            os.path.join(checkpoints_dp, f'cp_{loss_name}_best.pth')
+        )
 
     print(separator)
     train_time = time.time() - train_time_start
@@ -227,6 +235,9 @@ def main():
     # cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25'
     cur_dataset_dp = '/media/data/datasets/trafimau_lungs/preprocessed_z0.25'
 
+    device = 'cuda:0'
+    # device = 'cuda:1'
+
     scans_dp = os.path.join(f'{cur_dataset_dp}/scans')
     labels_dp = os.path.join(f'{cur_dataset_dp}/labels')
 
@@ -238,8 +249,6 @@ def main():
         scans_dp, labels_dp, restore_prev_z_dims=True, load_existing_train_valid_split=False)
 
     net = UNet(n_channels=1, n_classes=1)
-    # device = 'cuda:0'
-    device = 'cuda:1'
 
     # load weights
     # net.to(device=device)
@@ -248,12 +257,11 @@ def main():
 
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     em = train(
-        indices_train, indices_valid, scans_dp, labels_dp, net, optimizer,
-        source_slices_per_batch=3, aug_cnt=3, device=device, n_epochs=4,
-        max_train_samples=4000, max_valid_samples=500)
+        indices_train[:1_000], indices_valid[:], scans_dp, labels_dp, net, optimizer,
+        source_slices_per_batch=4, aug_cnt=0, device=device, n_epochs=15)
 
     fig, ax = plot_learning_curves(em)
-    fig.savefig('results/learning_curves.png')
+    fig.savefig('results/learning_curves.png', dpi=200)
 
     # loss_func = nn.BCELoss(reduction='mean')
     # todo: get top losses on the full valid dataset
@@ -263,7 +271,7 @@ def main():
 
     print(separator)
     print('cuda memory stats:')
-    print_cuda_memory_stats()
+    print_cuda_memory_stats(device)
 
 
 if __name__ == '__main__':

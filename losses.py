@@ -42,7 +42,7 @@ class FocalLoss(nn.Module):
     def __init__(self, alpha: float, gamma: Optional[float] = 2.0,
                  reduction: Optional[str] = 'none') -> None:
         """
-        :param alpha (float): Weighting factor in [0, 1].
+        :param alpha (float): Weighting factor in [0, 1] for class 1
         :param gamma (float): Focusing parameter. gamma >= 0.
         """
         super(FocalLoss, self).__init__()
@@ -69,15 +69,20 @@ class FocalLoss(nn.Module):
                 "input and target must be in the same device. Got: {}".format(
                     input.device, target.device))
 
+        # assume that input corresponds to probability of class 1
+
+        one = torch.tensor(1., device=input.device)
+        gamma_device = self.gamma.to(input.device)
+
         # clip input values to prevent large numbers in the result
         input_c = torch.clamp(input, self.eps, 1 - self.eps)
-        one = torch.tensor(1., device=input.device)
+
         lhs = target * input_c
         rhs = (one - target) * (one - input_c)
-        preds_t = lhs + rhs
-        gamma_device = self.gamma.to(input.device)
-        weight = torch.pow(one - preds_t, gamma_device)
-        focal = -self.alpha * weight * torch.log(preds_t)
+        prob_t = lhs + rhs
+        weight = torch.pow(one - prob_t, gamma_device)
+        alpha_t = target * self.alpha + (one - target) * (1 - self.alpha)
+        focal = -alpha_t * weight * torch.log(prob_t)
         loss_tmp = torch.sum(focal, dim=(1, 2, 3))
 
         if self.reduction == 'none':

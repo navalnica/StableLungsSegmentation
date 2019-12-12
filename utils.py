@@ -85,15 +85,18 @@ def copy_checkpoints_to_gdrive(checkpoints_dp):
 
 def plot_learning_curves(epoch_metrics):
     n_epochs = len(list(epoch_metrics.values())[0]['train'])
+    loss_name = epoch_metrics['loss_name']
     x = np.arange(1, n_epochs + 1)
-    fig, ax = plt.subplots(1, len(epoch_metrics), figsize=(6 * len(epoch_metrics), 5), squeeze=False)
+    fig, ax = plt.subplots(1, len(epoch_metrics) - 1, figsize=(6 * len(epoch_metrics), 5), squeeze=False)
+    fig.suptitle(f'loss: {loss_name}. epochs: {n_epochs}')
 
     for (m_name, m_dict), _ax in zip(epoch_metrics.items(), ax.flatten()):
-        _ax.plot(x, epoch_metrics[m_name]['train'], marker='o', label='train')
-        _ax.plot(x, epoch_metrics[m_name]['valid'], marker='o', label='valid')
-        _ax.set_title(m_name)
-        _ax.grid()
-        _ax.legend()
+        if type(m_dict) == type(dict()):
+            _ax.plot(x, epoch_metrics[m_name]['train'], marker='o', label='train')
+            _ax.plot(x, epoch_metrics[m_name]['valid'], marker='o', label='valid')
+            _ax.set_title(m_name)
+            _ax.grid()
+            _ax.legend()
 
     return fig, ax
 
@@ -177,13 +180,12 @@ def get_scans_and_labels_batches(
             yield (s, l, ix)
 
 
-def print_cuda_memory_stats():
-    print(
-        f'allocated: {torch.cuda.memory_allocated("cuda") / 1024 / 1024 : .2f} '
-        f'(max: {torch.cuda.max_memory_allocated("cuda") / 1024 / 1024 : .2f}), '
-        f'cached: {torch.cuda.memory_cached("cuda") / 1024 / 1024 : .2f} '
-        f'(max: {torch.cuda.max_memory_cached("cuda") / 1024 / 1024 : .2f})'
-    )
+def print_cuda_memory_stats(device):
+    a = torch.cuda.memory_allocated(device=device) / 1024 / 1024
+    am = torch.cuda.max_memory_allocated(device=device) / 1024 / 1024
+    c = torch.cuda.memory_cached(device=device) / 1024 / 1024
+    cm = torch.cuda.max_memory_cached(device=device) / 1024 / 1024
+    print(f'allocated: {a : .2f} (max: {am : .2f}), cached: {c : .2f} (max: {cm : .2f})')
 
 
 ######### unused #########

@@ -134,10 +134,6 @@ def evaluate_net(
 
                 pbar.update()
 
-                if total_samples_cnt is not None:
-                    if ix >= total_samples_cnt:
-                        break
-
     for m_name, m_dict in metrics_res.items():
         m_dict['mean'] /= total_samples_cnt
 
