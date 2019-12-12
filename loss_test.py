@@ -19,7 +19,6 @@ if __name__ == '__main__':
     # value = loss(cc, true)
     # value.backward()
 
-
     true = np.array([
         [
             [1, 1],
@@ -58,4 +57,3 @@ if __name__ == '__main__':
     output = loss(pred_c, true)
     output.backward()
     print(output)
-

@@ -1,14 +1,9 @@
-"""
-TODO
-------------------
-* compare small batches vs large
-"""
-
 import copy
 import time
 
 from sklearn.model_selection import train_test_split
 from torch import optim
+from torch.nn import BCELoss
 
 from losses import *
 from model_blocks import *
@@ -20,6 +15,11 @@ plt.rcParams['axes.titlesize'] = 15
 plt.rcParams['figure.titlesize'] = 17
 plt.rcParams['hist.bins'] = 100
 plt.rcParams['image.cmap'] = 'gray'
+
+metrics = {type(func).__name__: func
+           for func in
+           [BCELoss(reduction='mean'), NegDiceLoss(), FocalLoss(alpha=0.75, gamma=4, reduction='mean')]}
+loss_name, loss_func = list(metrics.items())[0]
 
 
 def get_train_valid_indices(
@@ -89,14 +89,7 @@ def train(
     es_tolerance = 0.001
     es_patience = 6
 
-    metrics = [nn.BCELoss(reduction='mean'), NegDiceLoss(), FocalLoss(alpha=0.75, gamma=4, reduction='mean')]
-    metrics = {type(func).__name__: func for func in metrics}
     em = {m: {'train': [], 'valid': []} for m in metrics.keys()}  # epoch metrics
-
-    # select the loss function name
-    loss_name = type(nn.BCELoss(reduction='mean')).__name__
-    # loss_name = type(NegDiceLoss()).__name__
-    # loss_name = type(FocalLoss(alpha=0.75, gamma=4, reduction='mean')).__name__
     em['loss_name'] = loss_name
 
     best_loss_valid = 1e+30
@@ -135,7 +128,7 @@ def train(
             indices_train, scans_dp, labels_dp, source_slices_per_batch, aug_cnt, to_shuffle=True)
 
         for m_name, m_dict in em.items():
-            if type(m_dict) == type(dict()):
+            if isinstance(m_dict, dict):
                 m_dict['train'].append(0)
 
         with tqdm.tqdm(total=n_train, desc=f'epoch {cur_epoch}. train',
@@ -163,15 +156,14 @@ def train(
 
                 with torch.no_grad():
                     for m_name, m_func in metrics.items():
-                        if not loss_name in m_name:
+                        if loss_name not in m_name:
                             value = m_func(out, y)
                             em[m_name]['train'][-1] += value.item() * len(scans)
 
-                pbar_t.update(len(x))
-
+                pbar_t.update(x.size()[0])
 
         for m_name, m_dict in em.items():
-            if type(m_dict) == type(dict()):
+            if isinstance(m_dict, dict):
                 m_dict['train'][-1] /= n_train
                 tqdm.tqdm.write(f'{m_name} train: {m_dict["train"][-1] : .3f}')
 
@@ -186,7 +178,7 @@ def train(
         evaluation_res = evaluate_net(net, valid_gen, metrics, n_valid, device, f'epoch {cur_epoch}. valid')
 
         for m_name, m_dict in em.items():
-            if type(m_dict) == type(dict()):
+            if isinstance(m_dict, dict):
                 m_dict['valid'].append(evaluation_res[m_name]['mean'])
                 tqdm.tqdm.write(f'{m_name} valid: {m_dict["valid"][-1] : .3f}')
 
@@ -232,8 +224,8 @@ def train(
 
 
 def main():
-    # cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25'
-    cur_dataset_dp = '/media/data/datasets/trafimau_lungs/preprocessed_z0.25'
+    cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25'
+    # cur_dataset_dp = '/media/data/datasets/trafimau_lungs/preprocessed_z0.25'
 
     device = 'cuda:0'
     # device = 'cuda:1'
@@ -250,24 +242,26 @@ def main():
 
     net = UNet(n_channels=1, n_classes=1)
 
-    # load weights
-    # net.to(device=device)
-    # state_dict = torch.load('results/model_checkpoints/cp_epoch_9.pth')
-    # net.load_state_dict(state_dict)
+    to_train = False
 
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-    em = train(
-        indices_train[:1_000], indices_valid[:], scans_dp, labels_dp, net, optimizer,
-        source_slices_per_batch=4, aug_cnt=0, device=device, n_epochs=15)
+    if to_train:
+        np.random.shuffle(indices_train)  # shuffle before training on partial dataset
+        optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+        em = train(
+            indices_train[:5_000], indices_valid[:], scans_dp, labels_dp, net, optimizer,
+            source_slices_per_batch=4, aug_cnt=2, device=device, n_epochs=15)
 
-    fig, ax = plot_learning_curves(em)
-    fig.savefig('results/learning_curves.png', dpi=200)
+        fig, ax = plot_learning_curves(em)
+        fig.savefig(f'results/learning_curves_{loss_name}.png', dpi=200)
+    else:
+        # evaluate model
+        print(separator)
+        print('evaluating model')
 
-    # loss_func = nn.BCELoss(reduction='mean')
-    # todo: get top losses on the full valid dataset
-    # evaluate_segmentation(
-    #     net, loss_func, 'results/existing_checkpoints/cp_epoch_9.pth',
-    #     indices_valid[:100], scans_dp, labels_dp, device=device)
+        hd = build_hd_boxplots(
+            net, device, loss_name, 'results/existing_checkpoints/cp_BCELoss_epoch_20.pth',
+            indices_valid[:15], scans_dp, labels_dp)
+        visualize_worst_best(net, hd, scans_dp, labels_dp, device, loss_name)
 
     print(separator)
     print('cuda memory stats:')

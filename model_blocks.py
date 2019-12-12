@@ -1,10 +1,13 @@
 import os
-import pickle
 
+import numpy as np
 import torch
 import torch.nn as nn
 import tqdm
 from matplotlib import pyplot as plt
+from skimage.segmentation import mark_boundaries
+from skimage.util import img_as_float
+from sklearn.metrics import pairwise_distances
 from torch.nn import functional as F
 
 import utils
@@ -87,19 +90,6 @@ class outconv(nn.Module):
         return x
 
 
-# def my_dice_score(true, pred):
-#     eps = 0.00001
-#     a = true.view(-1)
-#     b = pred.view(-1)
-#     intersection = torch.dot(a, b)
-#     union = torch.sum(a) + torch.sum(b)
-#     if union == 0:
-#         intersection = eps
-#     # print(f'intersection: {intersection}. union: {union}')
-#     dice = 2 * intersection / (union + 2 * eps)
-#     return dice
-
-
 def evaluate_net(
         net, data_gen, metrics, total_samples_cnt,
         device, tqdm_description=None
@@ -140,67 +130,136 @@ def evaluate_net(
     return metrics_res
 
 
-def evaluate_segmentation(
-        net, loss_func, state_dict_fp, indices_valid, scans_dp,
-        labels_dp, max_top_losses_cnt=8, device='cuda', dir='results'
-):
+#
+# def evaluate_segmentation(
+#         net, loss_func, state_dict_fp, indices_valid, scans_dp,
+#         labels_dp, max_top_losses_cnt=8, device='cuda', dir='results'
+# ):
+#     """
+#     Find slices that have highest loss values for specified loss function.
+#     Store indices of such slices to visualize results for the for networks with other weights.
+#     Pass the same loss function that the model was trained with.
+#     """
+#     net.to(device=device)
+#     state_dict = torch.load(state_dict_fp)
+#     net.load_state_dict(state_dict)
+#
+#     loss_name = type(loss_func).__name__
+#
+#     gen = utils.get_scans_and_labels_batches(indices_valid, scans_dp, labels_dp, None, to_shuffle=False)
+#     evaluation_res = evaluate_net(net, gen, {'loss': loss_func}, len(indices_valid), device,
+#                                   f'evaluation for top losses')
+#     top_losses = sorted(evaluation_res['loss']['list'], key=lambda x: x[1], reverse=True)
+#     top_losses_indices = [x[0] for x in top_losses[:max_top_losses_cnt]]
+#
+#     # store top losses slice indices
+#     top_losses_indices_fp = f'{dir}/top_losses_indices_{loss_name}.pickle'
+#     print(f'storing top losses indices under "{top_losses_indices_fp}"')
+#     with open(top_losses_indices_fp, 'wb') as fout:
+#         pickle.dump(top_losses_indices, fout)
+#
+#     visualize_segmentation(net, top_losses_indices, scans_dp,
+#                            labels_dp, dir=f'{dir}/top_{loss_name}_values_slices/{loss_name}/')
+#
+#     return top_losses_indices
+
+
+def mean_hausdorff_distance(input_bin, target, max_ahd=np.inf):
     """
-    Find slices that have highest loss values for specified loss function.
-    Store indices of such slices to visualize results for the for networks with other weights.
-    Pass the same loss function that the model was trained with.
+    Compute the Averaged Hausdorff Distance function
+    :param input_bin: HxW tensor
+    :param target: HxW tensor
+    :param max_ahd: Maximum AHD possible to return if any set is empty. Default: inf.
+    """
+
+    # convert to numpy
+    v1 = input_bin.cpu().detach().numpy()
+    v2 = target.cpu().detach().numpy()
+
+    # get coordinates of class 1 points
+    p1 = np.argwhere(v1 == 1)
+    p2 = np.argwhere(v2 == 1)
+
+    if len(p1) == 0 or len(p2) == 0:
+        return max_ahd
+
+    d = pairwise_distances(p1, p2, metric='euclidean')
+    hd1 = np.max(np.min(d, axis=0))
+    hd2 = np.max(np.min(d, axis=1))
+    res = max(hd1, hd2)
+
+    return res
+
+
+def build_hd_boxplots(net, device, loss_name, checkpoint_fp, indices_valid, scans_dp, labels_dp, dir='results'):
+    """
+    :param checkpoints: dict(loss_name: checkpoint_path)
     """
     net.to(device=device)
-    state_dict = torch.load(state_dict_fp)
-    net.load_state_dict(state_dict)
-
-    loss_name = type(loss_func).__name__
-
-    gen = utils.get_scans_and_labels_batches(indices_valid, scans_dp, labels_dp, None, to_shuffle=False)
-    evaluation_res = evaluate_net(net, gen, {'loss': loss_func}, len(indices_valid), device,
-                                  f'evaluation for top losses')
-    top_losses = sorted(evaluation_res['loss']['list'], key=lambda x: x[1], reverse=True)
-    top_losses_indices = [x[0] for x in top_losses[:max_top_losses_cnt]]
-
-    # store top losses slice indices
-    top_losses_indices_fp = f'{dir}/top_losses_indices_{loss_name}.pickle'
-    print(f'storing top losses indices under "{top_losses_indices_fp}"')
-    with open(top_losses_indices_fp, 'wb') as fout:
-        pickle.dump(top_losses_indices, fout)
-
-    visualize_segmentation(net, top_losses_indices, scans_dp,
-                           labels_dp, dir=f'{dir}/top_{loss_name}_values_slices/{loss_name}/')
-
-    return top_losses_indices
-
-
-def visualize_segmentation(
-        net, slice_indices, scans_dp, labels_dp,
-        dir='results', scans_on_img=4, device='cuda'
-):
-    os.makedirs(dir, exist_ok=True)
     net.eval()
-    gen = utils.get_scans_and_labels_batches(slice_indices, scans_dp, labels_dp, None, to_shuffle=False)
-    fig, ax = plt.subplots(scans_on_img, 3, figsize=(5 * 3, 5 * scans_on_img), squeeze=False)
-    j = 1
-    i = 0
-    with torch.no_grad():
-        for slice, labels, scan_ix in gen:
-            ax[i][0].imshow(slice, origin='lower')
-            ax[i][0].set_title(scan_ix)
-            ax[i][1].imshow(labels, origin='lower')
-            ax[i][1].set_title('true labels')
-            x = torch.tensor(slice, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
-            out = net(x)
-            out_bin = (out > 0.5).float()
-            out_bin_np = utils.squeeze_and_to_numpy(out_bin)
-            ax[i][2].imshow(out_bin_np, origin='lower')
-            ax[i][2].set_title(f'prediction')
+    n_valid = len(indices_valid)
+    hd = dict()
 
-            if (i + 1) % scans_on_img == 0 or ((i + 1) % scans_on_img != 0 and i + 1 == len(slice_indices)):
-                fig.tight_layout()
-                fig.savefig(f'{dir}/{j}.png', dpi=200)
-                j += 1
-                i = 0
-                fig, ax = plt.subplots(scans_on_img, 3, figsize=(5 * 3, 5 * scans_on_img), squeeze=False)
-            else:
-                i += 1
+    state_dict = torch.load(checkpoint_fp)
+    net.load_state_dict(state_dict)
+    valid_gen = utils.get_scans_and_labels_batches(
+        indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
+    hd = []
+    with torch.no_grad():
+        with tqdm.tqdm(total=n_valid, desc=f'{loss_name} model: hausdorff distance',
+                       unit='scan', leave=True) as pbar:
+            for ix, (slice, labels, slice_ix) in enumerate(valid_gen, start=1):
+                x = torch.tensor(slice, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
+                y = torch.tensor(labels, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
+                out = net(x)
+                out_bin = (out > 0.5).float().squeeze(0).squeeze(0)
+                y_squeezed = y.squeeze(0).squeeze(0)
+                val = mean_hausdorff_distance(out_bin, y_squeezed)
+                hd.append((slice_ix, val))
+                pbar.update()
+
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+    hd_values = np.array([x[1] for x in hd])
+    ax.boxplot(hd_values, showfliers=False)
+    hd_mean = np.mean(hd_values[np.isfinite(hd_values)])
+    ax.set_title(f'{loss_name}')
+    fig.suptitle(f'hausdorff values. mean: {hd_mean : .3f}')
+    fig.savefig(f'{dir}/{loss_name}_hausdorff_values.png', dpi=200)
+    return hd
+
+
+def visualize_worst_best(net, hausdorff_list, scans_dp, labels_dp, device, loss_name, dir='results'):
+    os.makedirs(dir, exist_ok=True)
+    hd_sorted = sorted(hausdorff_list, key=lambda x: x[1])
+
+    worst = hd_sorted[:-4 - 1:-1]
+    worst_ix = [x[0] for x in worst]
+    worst_values = [x[1] for x in worst]
+
+    best = hd_sorted[:4]
+    best_ix = [x[0] for x in best]
+    best_values = [x[1] for x in best]
+
+    for slice_indices, values, title in zip([worst_ix, best_ix], [worst_values, best_values], ['worst', 'best']):
+        gen = utils.get_scans_and_labels_batches(slice_indices, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
+        fig, ax = plt.subplots(2, 2, figsize=(5 * 2, 5 * 2), squeeze=False)
+        net.eval()
+        with torch.no_grad():
+            for (slice, labels, scan_ix), v, _ax in zip(gen, values, ax.flatten()):
+                x = torch.tensor(slice, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
+                out = net(x)
+                out_bin = (out > 0.5).float()
+                out_bin_np = utils.squeeze_and_to_numpy(out_bin).astype(np.int)
+
+                slice_f = img_as_float((slice - np.min(slice)).astype(np.int))
+                b_true = mark_boundaries(slice_f, labels)
+                b_pred = mark_boundaries(slice_f, out_bin_np.astype(np.int), color=(1, 0, 0))
+                b = np.max([b_true, b_pred], axis=0)
+                _ax.imshow(slice_f, origin='lower')
+                _ax.imshow(b, alpha=.4, origin='lower')
+                _ax.set_title(f'{scan_ix}: {v : .3f}')
+
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.85)
+        fig.suptitle(title)
+        fig.savefig(f'{dir}/{loss_name}_{title}.png', dpi=200)
