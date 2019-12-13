@@ -24,7 +24,7 @@ metrics = {type(func).__name__: func
                # FocalLoss(alpha=0.75, gamma=2, reduction='mean'),
                FocalLoss(gamma=2)
            ]}
-loss_name, loss_func = list(metrics.items())[2]
+loss_name, loss_func = list(metrics.items())[1]
 
 
 def get_train_valid_indices(
@@ -92,7 +92,7 @@ def train(
     # early stopping variables
     es_cnt = 0
     es_tolerance = 0.0001
-    es_patience = 6
+    es_patience = 10
 
     em = {m: {'train': [], 'valid': []} for m in metrics.keys()}  # epoch metrics
     em['loss_name'] = loss_name
@@ -170,7 +170,7 @@ def train(
         for m_name, m_dict in em.items():
             if isinstance(m_dict, dict):
                 m_dict['train'][-1] /= n_train
-                tqdm.tqdm.write(f'{m_name} train: {m_dict["train"][-1] : .3f}')
+                tqdm.tqdm.write(f'{m_name} train: {m_dict["train"][-1] : .4f}')
 
         if checkpoints_dp is not None:
             torch.save(
@@ -185,7 +185,7 @@ def train(
         for m_name, m_dict in em.items():
             if isinstance(m_dict, dict):
                 m_dict['valid'].append(evaluation_res[m_name]['mean'])
-                tqdm.tqdm.write(f'{m_name} valid: {m_dict["valid"][-1] : .3f}')
+                tqdm.tqdm.write(f'{m_name} valid: {m_dict["valid"][-1] : .4f}')
 
         epoch_time = time.time() - epoch_time_start
         tqdm.tqdm.write(f'epoch completed in {epoch_time // 60}m {epoch_time % 60 : .2f}s')
@@ -196,7 +196,7 @@ def train(
             best_net_wts = copy.deepcopy(net.state_dict())
             best_epoch_ix = cur_epoch
             es_cnt = 0
-            tqdm.tqdm.write(f'epoch {cur_epoch}: new best loss valid: {best_loss_valid : .3f}')
+            tqdm.tqdm.write(f'epoch {cur_epoch}: new best loss valid: {best_loss_valid : .4f}')
         else:
             es_cnt += 1
 
@@ -223,7 +223,7 @@ def train(
     print(separator)
     train_time = time.time() - train_time_start
     print(f'training completed in {train_time // 60}m {train_time % 60 : .2f}s')
-    print(f'best loss valid: {best_loss_valid : .3f}, best epoch: {best_epoch_ix}')
+    print(f'best loss valid: {best_loss_valid : .4f}, best epoch: {best_epoch_ix}')
 
     return em
 
@@ -253,13 +253,13 @@ def main():
         np.random.shuffle(indices_train)  # shuffle before training on partial dataset
         optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
         em = train(
-            indices_train[:5_000], indices_valid[:], scans_dp, labels_dp, net, optimizer,
-            source_slices_per_batch=4, aug_cnt=2, device=device, n_epochs=20)
+            indices_train[:], indices_valid[:], scans_dp, labels_dp, net, optimizer,
+            source_slices_per_batch=4, aug_cnt=1, device=device, n_epochs=30)
         plot_learning_curves(em)
 
     else:
         # loading best model
-        cp_fp = 'results/existing_checkpoints/cp_BCELoss_epoch_20.pth'
+        cp_fp = 'results/existing_checkpoints/cp_BCELoss_epoch_9.pth'
         print(separator)
         print(f'loading existing model from "{cp_fp}"')
 
@@ -269,8 +269,17 @@ def main():
 
     print(separator)
     print('evaluating model')
-    hd = build_hd_boxplots(net, device, loss_name, indices_valid[:], scans_dp, labels_dp)
-    visualize_worst_best(net, hd, scans_dp, labels_dp, device, loss_name)
+
+    hd, hd_avg = get_hd_for_valid_slices(net, device, loss_name, indices_valid[:], scans_dp, labels_dp)
+
+    hd_list = [x[1] for x in hd]
+    build_hd_boxplot(hd_list, False, loss_name)
+    visualize_worst_best(net, hd, False, scans_dp, labels_dp, device, loss_name)
+
+    hd_avg_list = [x[1] for x in hd_avg]
+    build_hd_boxplot(hd_avg_list, True, loss_name)
+    visualize_worst_best(net, hd_avg, True, scans_dp, labels_dp, device, loss_name)
+
 
     print(separator)
     print('cuda memory stats:')

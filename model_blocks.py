@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -162,7 +164,7 @@ def evaluate_net(
 #     return top_losses_indices
 
 
-def mean_hausdorff_distance(input_bin, target, max_ahd=np.inf):
+def hausdorff_distance(input_bin, target, max_ahd=np.inf):
     """
     Compute the Averaged Hausdorff Distance function
     :param input_bin: HxW tensor
@@ -189,7 +191,34 @@ def mean_hausdorff_distance(input_bin, target, max_ahd=np.inf):
     return res
 
 
-def build_hd_boxplots(net, device, loss_name, indices_valid, scans_dp, labels_dp, dir='results'):
+def average_hausdorff_distance(input_bin, target, max_ahd=np.inf):
+    """
+    Compute the Averaged Hausdorff Distance function
+    :param input_bin: HxW tensor
+    :param target: HxW tensor
+    :param max_ahd: Maximum AHD possible to return if any set is empty. Default: inf.
+    """
+
+    # convert to numpy
+    v1 = input_bin.cpu().detach().numpy()
+    v2 = target.cpu().detach().numpy()
+
+    # get coordinates of class 1 points
+    p1 = np.argwhere(v1 == 1)
+    p2 = np.argwhere(v2 == 1)
+
+    if len(p1) == 0 or len(p2) == 0:
+        return max_ahd
+
+    d = pairwise_distances(p1, p2, metric='euclidean')
+    hd1 = np.mean(np.min(d, axis=0))
+    hd2 = np.mean(np.min(d, axis=1))
+    res = max(hd1, hd2)
+
+    return res
+
+
+def get_hd_for_valid_slices(net, device, loss_name, indices_valid, scans_dp, labels_dp, dir='results'):
     """
     :param checkpoints: dict(loss_name: checkpoint_path)
     """
@@ -199,6 +228,7 @@ def build_hd_boxplots(net, device, loss_name, indices_valid, scans_dp, labels_dp
     valid_gen = utils.get_scans_and_labels_batches(
         indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
     hd = []
+    hd_avg = []
     with torch.no_grad():
         with tqdm.tqdm(total=n_valid, desc=f'{loss_name} model: hausdorff distance',
                        unit='scan', leave=True) as pbar:
@@ -208,24 +238,48 @@ def build_hd_boxplots(net, device, loss_name, indices_valid, scans_dp, labels_dp
                 out = net(x)
                 out_bin = (out > 0.5).float().squeeze(0).squeeze(0)
                 y_squeezed = y.squeeze(0).squeeze(0)
-                val = mean_hausdorff_distance(out_bin, y_squeezed)
+
+                val = hausdorff_distance(out_bin, y_squeezed)
                 hd.append((slice_ix, val))
+
+                val_avg = average_hausdorff_distance(out_bin, y_squeezed)
+                hd_avg.append((slice_ix, val_avg))
+
                 pbar.update()
 
+    hd = sorted(hd, key=lambda x: x[1], reverse=True)
+    with open(f'{dir}/{loss_name}_hd_valid.pickle', 'wb') as fout:
+        pickle.dump(hd, fout)
+    with open(f'{dir}/{loss_name}_hd_valid.txt', 'w') as fout:
+        fout.writelines('\n'.join(map(str, hd)))
+
+    hd_avg = sorted(hd_avg, key=lambda x: x[1], reverse=True)
+    with open(f'{dir}/{loss_name}_hd_avg_valid.pickle', 'wb') as fout:
+        pickle.dump(hd_avg, fout)
+    with open(f'{dir}/{loss_name}_hd_avg_valid.txt', 'w') as fout:
+        fout.writelines('\n'.join(map(str, hd_avg)))
+
+    return hd, hd_avg
+
+
+def build_hd_boxplot(hausdorff_list, average, loss_name, dir='results'):
+    """
+    build Hausdorff distances box plot
+    """
     fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-    hd_values = np.array([x[1] for x in hd])
-    ax.boxplot(hd_values, showfliers=False)
-    hd_mean = np.mean(hd_values[np.isfinite(hd_values)])
-    ax.set_title(f'{loss_name}')
-    fig.suptitle(f'hausdorff values. mean: {hd_mean : .3f}')
-    fig.savefig(f'{dir}/{loss_name}_hd_boxplot.png', dpi=200)
-    return hd
+    fig.suptitle(('average ' if average else '') + 'hausdorff values')
+    if not isinstance(hausdorff_list, np.ndarray):
+        hausdorff_list = np.array(hausdorff_list)
+    ax.boxplot(hausdorff_list, showfliers=False)
+    hd_mean = np.mean(hausdorff_list[np.isfinite(hausdorff_list)])
+    ax.set_title(f'{loss_name}. mean: {hd_mean : .3f}')
+    fig.savefig(f'{dir}/{loss_name}_hd_{"avg_" if average else ""}boxplot.png', dpi=200)
 
 
-def visualize_worst_best(net, hausdorff_list, scans_dp, labels_dp, device, loss_name, dir='results'):
-    hd_sorted = sorted(hausdorff_list, key=lambda x: x[1])
+def visualize_worst_best(net, hausdorff_dict, average, scans_dp, labels_dp, device, loss_name, dir='results'):
+    hd_sorted = sorted(hausdorff_dict, key=lambda x: x[1])
 
-    cnt = 6
+    cnt = 8
     worst = hd_sorted[:-cnt - 1:-1]
     worst_ix = [x[0] for x in worst]
     worst_values = [x[1] for x in worst]
@@ -234,7 +288,7 @@ def visualize_worst_best(net, hausdorff_list, scans_dp, labels_dp, device, loss_
     best_ix = [x[0] for x in best]
     best_values = [x[1] for x in best]
 
-    for slice_indices, values, title in zip([worst_ix, best_ix], [worst_values, best_values], ['worst', 'best']):
+    for slice_indices, values, title in zip([worst_ix, best_ix], [worst_values, best_values], ['Worst', 'Best']):
         gen = utils.get_scans_and_labels_batches(slice_indices, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
         fig, ax = plt.subplots(2, cnt // 2, figsize=(5 * cnt // 2, 5 * 2), squeeze=False)
         net.eval()
@@ -255,5 +309,5 @@ def visualize_worst_best(net, hausdorff_list, scans_dp, labels_dp, device, loss_
 
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
-        fig.suptitle(f'{loss_name}. {title} Hausdorff distances')
-        fig.savefig(f'{dir}/{loss_name}_hd_{title}.png', dpi=200)
+        fig.suptitle(f'{loss_name}. {title} {"Average " if average else ""}Hausdorff distances')
+        fig.savefig(f'{dir}/{loss_name}_hd_{"avg_" if average else ""}{title}.png', dpi=200)
