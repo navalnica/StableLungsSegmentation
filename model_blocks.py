@@ -1,5 +1,3 @@
-import os
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -118,7 +116,7 @@ def evaluate_net(
                 out = net(x)
 
                 for m_name, m_func in metrics.items():
-                    m_value = m_func(y, out).item()
+                    m_value = m_func(out, y).item()
                     metrics_res[m_name]['mean'] += m_value
                     metrics_res[m_name]['list'].append((slice_ix, m_value))
 
@@ -191,17 +189,13 @@ def mean_hausdorff_distance(input_bin, target, max_ahd=np.inf):
     return res
 
 
-def build_hd_boxplots(net, device, loss_name, checkpoint_fp, indices_valid, scans_dp, labels_dp, dir='results'):
+def build_hd_boxplots(net, device, loss_name, indices_valid, scans_dp, labels_dp, dir='results'):
     """
     :param checkpoints: dict(loss_name: checkpoint_path)
     """
-    net.to(device=device)
     net.eval()
     n_valid = len(indices_valid)
-    hd = dict()
 
-    state_dict = torch.load(checkpoint_fp)
-    net.load_state_dict(state_dict)
     valid_gen = utils.get_scans_and_labels_batches(
         indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
     hd = []
@@ -224,25 +218,25 @@ def build_hd_boxplots(net, device, loss_name, checkpoint_fp, indices_valid, scan
     hd_mean = np.mean(hd_values[np.isfinite(hd_values)])
     ax.set_title(f'{loss_name}')
     fig.suptitle(f'hausdorff values. mean: {hd_mean : .3f}')
-    fig.savefig(f'{dir}/{loss_name}_hausdorff_values.png', dpi=200)
+    fig.savefig(f'{dir}/{loss_name}_hd_boxplot.png', dpi=200)
     return hd
 
 
 def visualize_worst_best(net, hausdorff_list, scans_dp, labels_dp, device, loss_name, dir='results'):
-    os.makedirs(dir, exist_ok=True)
     hd_sorted = sorted(hausdorff_list, key=lambda x: x[1])
 
-    worst = hd_sorted[:-4 - 1:-1]
+    cnt = 6
+    worst = hd_sorted[:-cnt - 1:-1]
     worst_ix = [x[0] for x in worst]
     worst_values = [x[1] for x in worst]
 
-    best = hd_sorted[:4]
+    best = hd_sorted[:cnt]
     best_ix = [x[0] for x in best]
     best_values = [x[1] for x in best]
 
     for slice_indices, values, title in zip([worst_ix, best_ix], [worst_values, best_values], ['worst', 'best']):
         gen = utils.get_scans_and_labels_batches(slice_indices, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
-        fig, ax = plt.subplots(2, 2, figsize=(5 * 2, 5 * 2), squeeze=False)
+        fig, ax = plt.subplots(2, cnt // 2, figsize=(5 * cnt // 2, 5 * 2), squeeze=False)
         net.eval()
         with torch.no_grad():
             for (slice, labels, scan_ix), v, _ax in zip(gen, values, ax.flatten()):
@@ -261,5 +255,5 @@ def visualize_worst_best(net, hausdorff_list, scans_dp, labels_dp, device, loss_
 
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
-        fig.suptitle(title)
-        fig.savefig(f'{dir}/{loss_name}_{title}.png', dpi=200)
+        fig.suptitle(f'{loss_name}. {title} Hausdorff distances')
+        fig.savefig(f'{dir}/{loss_name}_hd_{title}.png', dpi=200)

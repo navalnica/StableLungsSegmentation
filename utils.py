@@ -83,7 +83,7 @@ def copy_checkpoints_to_gdrive(checkpoints_dp):
     shutil.copytree(checkpoints_dp, gdrive_dest)
 
 
-def plot_learning_curves(epoch_metrics):
+def plot_learning_curves(epoch_metrics, dir='results'):
     n_epochs = len(list(epoch_metrics.values())[0]['train'])
     loss_name = epoch_metrics['loss_name']
     x = np.arange(1, n_epochs + 1)
@@ -98,7 +98,7 @@ def plot_learning_curves(epoch_metrics):
             _ax.grid()
             _ax.legend()
 
-    return fig, ax
+    fig.savefig(f'{dir}/{loss_name}_learning_curves.png', dpi=200)
 
 
 def squeeze_and_to_numpy(tz):

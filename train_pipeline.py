@@ -18,8 +18,13 @@ plt.rcParams['image.cmap'] = 'gray'
 
 metrics = {type(func).__name__: func
            for func in
-           [BCELoss(reduction='mean'), NegDiceLoss(), FocalLoss(alpha=0.75, gamma=4, reduction='mean')]}
-loss_name, loss_func = list(metrics.items())[0]
+           [
+               BCELoss(reduction='mean'),
+               NegDiceLoss(),
+               # FocalLoss(alpha=0.75, gamma=2, reduction='mean'),
+               FocalLoss(gamma=2)
+           ]}
+loss_name, loss_func = list(metrics.items())[2]
 
 
 def get_train_valid_indices(
@@ -44,9 +49,9 @@ def get_train_valid_indices(
     if load_existing_train_valid_split:
         existing_fns_dir = 'results/existing_filenames'
         print(f'loading train, valid filenames from existing files under "{existing_fns_dir}"')
-        with open(f'{existing_fns_dir}/filenames_train.txt') as fin:
+        with open(f'{existing_fns_dir}/{loss_name}_filenames_train.txt') as fin:
             fns_train = [x.strip() for x in fin.readlines() if x.strip()]
-        with open(f'{existing_fns_dir}/filenames_valid.txt') as fin:
+        with open(f'{existing_fns_dir}/{loss_name}_filenames_valid.txt') as fin:
             fns_valid = [x.strip() for x in fin.readlines() if x.strip()]
     else:
         print('performing train, test split')
@@ -55,9 +60,9 @@ def get_train_valid_indices(
         print('train, valid filenames cnt: %d, %d' % (len(fns_train), len(fns_valid)))
 
         print('storing train and valid filenames under "results" dir')
-        with open('results/filenames_train.txt', 'w') as fout:
+        with open(f'results/{loss_name}_filenames_train.txt', 'w') as fout:
             fout.writelines('\n'.join(sorted(fns_train)))
-        with open('results/filenames_valid.txt', 'w') as fout:
+        with open(f'results/{loss_name}_filenames_valid.txt', 'w') as fout:
             fout.writelines('\n'.join(sorted(fns_valid)))
 
     # create indices for each possible scan
@@ -86,7 +91,7 @@ def train(
 
     # early stopping variables
     es_cnt = 0
-    es_tolerance = 0.001
+    es_tolerance = 0.0001
     es_patience = 6
 
     em = {m: {'train': [], 'valid': []} for m in metrics.keys()}  # epoch metrics
@@ -201,7 +206,7 @@ def train(
             break
 
     # ----------- save metrics ----------- #
-    em_dump_fp = f'results/epoch_metrics_{loss_name}.pickle'
+    em_dump_fp = f'results/{loss_name}_epoch_metrics.pickle'
     print(separator)
     print(f'storing epoch metrics dict in "{em_dump_fp}"')
     with open(em_dump_fp, 'wb') as fout:
@@ -224,8 +229,8 @@ def train(
 
 
 def main():
-    cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25'
-    # cur_dataset_dp = '/media/data/datasets/trafimau_lungs/preprocessed_z0.25'
+    # cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25'
+    cur_dataset_dp = '/media/data/datasets/trafimau_lungs/preprocessed_z0.25'
 
     device = 'cuda:0'
     # device = 'cuda:1'
@@ -242,26 +247,30 @@ def main():
 
     net = UNet(n_channels=1, n_classes=1)
 
-    to_train = False
+    to_train = True
 
     if to_train:
         np.random.shuffle(indices_train)  # shuffle before training on partial dataset
         optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
         em = train(
             indices_train[:5_000], indices_valid[:], scans_dp, labels_dp, net, optimizer,
-            source_slices_per_batch=4, aug_cnt=2, device=device, n_epochs=15)
+            source_slices_per_batch=4, aug_cnt=2, device=device, n_epochs=20)
+        plot_learning_curves(em)
 
-        fig, ax = plot_learning_curves(em)
-        fig.savefig(f'results/learning_curves_{loss_name}.png', dpi=200)
     else:
-        # evaluate model
+        # loading best model
+        cp_fp = 'results/existing_checkpoints/cp_BCELoss_epoch_20.pth'
         print(separator)
-        print('evaluating model')
+        print(f'loading existing model from "{cp_fp}"')
 
-        hd = build_hd_boxplots(
-            net, device, loss_name, 'results/existing_checkpoints/cp_BCELoss_epoch_20.pth',
-            indices_valid[:15], scans_dp, labels_dp)
-        visualize_worst_best(net, hd, scans_dp, labels_dp, device, loss_name)
+        net.to(device=device)
+        state_dict = torch.load(cp_fp)
+        net.load_state_dict(state_dict)
+
+    print(separator)
+    print('evaluating model')
+    hd = build_hd_boxplots(net, device, loss_name, indices_valid[:], scans_dp, labels_dp)
+    visualize_worst_best(net, hd, scans_dp, labels_dp, device, loss_name)
 
     print(separator)
     print('cuda memory stats:')
