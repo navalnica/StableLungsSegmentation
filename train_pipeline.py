@@ -228,9 +228,60 @@ def train(
     return em
 
 
+def segment_scan(fns, net, device, scans_dp, labels_dp, dir='results'):
+    cp_fp = 'results/existing_checkpoints/cp_BCELoss_epoch_9.pth'
+
+    print(separator)
+    print(f'loading existing model from "{cp_fp}"')
+    net.to(device=device)
+    state_dict = torch.load(cp_fp)
+    net.load_state_dict(state_dict)
+
+    net.eval()
+    with torch.no_grad():
+        for fn in fns:
+
+            os.makedirs(f'{dir}/bce/{fn}', exist_ok=True)
+            scan = np.load(f'{scans_dp}/{fn}', allow_pickle=False)
+            labels = np.load(f'{labels_dp}/{fn}', allow_pickle=False)
+
+            with tqdm.tqdm(total=scan.shape[2]) as pbar:
+                for z_ix in range(scan.shape[2]):
+                    x = scan[:, :, z_ix]
+                    y = labels[:, :, z_ix]
+                    x_t = torch.tensor(x, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
+                    preds = net(x_t)
+                    mask = (preds > 0.5).float()
+                    mask = utils.squeeze_and_to_numpy(mask).astype(np.int)
+
+                    slice_f = img_as_float((x - np.min(x)).astype(np.int))
+                    b_true = mark_boundaries(slice_f, y)
+                    b_pred = mark_boundaries(slice_f, mask.astype(np.int), color=(1, 0, 0))
+                    b = np.max([b_true, b_pred], axis=0)
+                    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+                    ax.imshow(slice_f, origin='lower')
+                    ax.imshow(b, alpha=.4, origin='lower')
+                    ax.set_title(f'{fn}. z = {z_ix}')
+                    ax.axis('off')
+                    fig.savefig(f'{dir}/bce/{fn}/{z_ix}.png', dpi=150)
+                    plt.close(fig)
+
+                    pbar.update()
+
+
+def build_total_hd_boxplot():
+    for avg in [False, True]:
+        hd = []
+        for m_name in metrics:
+            with open(f'hd_to_plot/{m_name}_hd{"_avg" if avg else ""}_valid.pickle', 'rb') as fin:
+                hd_cur = pickle.load(fin)
+                hd.append((m_name, hd_cur))
+        build_multiple_hd_boxplots([x[1] for x in hd], avg, [x[0] for x in hd])
+
+
 def main():
-    # cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25'
-    cur_dataset_dp = '/media/data/datasets/trafimau_lungs/preprocessed_z0.25'
+    cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25'
+    # cur_dataset_dp = '/media/data/datasets/trafimau_lungs/preprocessed_z0.25'
 
     device = 'cuda:0'
     # device = 'cuda:1'
@@ -246,6 +297,11 @@ def main():
         scans_dp, labels_dp, restore_prev_z_dims=True, load_existing_train_valid_split=False)
 
     net = UNet(n_channels=1, n_classes=1)
+
+    # files = ['052.npy', '038.npy', '076.npy', '082.npy', '141.npy']
+    # segment_scan(files, net, device, scans_dp, labels_dp)
+    # build_total_hd_boxplot()
+    # return
 
     to_train = True
 
@@ -279,7 +335,6 @@ def main():
     hd_avg_list = [x[1] for x in hd_avg]
     build_hd_boxplot(hd_avg_list, True, loss_name)
     visualize_worst_best(net, hd_avg, True, scans_dp, labels_dp, device, loss_name)
-
 
     print(separator)
     print('cuda memory stats:')

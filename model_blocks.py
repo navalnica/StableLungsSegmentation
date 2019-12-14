@@ -262,22 +262,39 @@ def get_hd_for_valid_slices(net, device, loss_name, indices_valid, scans_dp, lab
     return hd, hd_avg
 
 
-def build_hd_boxplot(hausdorff_list, average, loss_name, dir='results'):
+def build_hd_boxplot(hd_values, average, loss_name, dir='results', ax=None):
     """
     build Hausdorff distances box plot
     """
-    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-    fig.suptitle(('average ' if average else '') + 'hausdorff values')
-    if not isinstance(hausdorff_list, np.ndarray):
-        hausdorff_list = np.array(hausdorff_list)
-    ax.boxplot(hausdorff_list, showfliers=False)
-    hd_mean = np.mean(hausdorff_list[np.isfinite(hausdorff_list)])
+    store = True if ax is None else False
+    if not ax:
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        fig.suptitle(('average ' if average else '') + 'hausdorff values')
+    else:
+        fig = ax.get_figure()
+    if not isinstance(hd_values, np.ndarray):
+        hd_values = np.array(hd_values)
+    ax.boxplot(hd_values, showfliers=False)
+    hd_mean = np.mean(hd_values[np.isfinite(hd_values)])
     ax.set_title(f'{loss_name}. mean: {hd_mean : .3f}')
-    fig.savefig(f'{dir}/{loss_name}_hd_{"avg_" if average else ""}boxplot.png', dpi=200)
+    if store:
+        fig.savefig(f'{dir}/{loss_name}_hd_{"avg_" if average else ""}boxplot.png', dpi=200)
 
 
-def visualize_worst_best(net, hausdorff_dict, average, scans_dp, labels_dp, device, loss_name, dir='results'):
-    hd_sorted = sorted(hausdorff_dict, key=lambda x: x[1])
+def build_multiple_hd_boxplots(metrics_hd, average, loss_names_list, dir='results'):
+    """
+    build Hausdorff distances box plot for multiple metrics on the same figure
+    """
+    n = len(metrics_hd)
+    fig, ax = plt.subplots(1, n, figsize=(5 * n, 5), squeeze=False)
+    for hd_tuples_list, loss_name, a in zip(metrics_hd, loss_names_list, ax.flatten()):
+        build_hd_boxplot([x[1] for x in hd_tuples_list], average, loss_name, dir=dir, ax=a)
+    fig.suptitle(f'total {"avg " if average else ""}Hausdorff distances boxplot')
+    fig.savefig(f'{dir}/total_hd_{"avg_" if average else ""}boxplot.png', dpi=200)
+
+
+def visualize_worst_best(net, scan_ix_and_hd, average, scans_dp, labels_dp, device, loss_name, dir='results'):
+    hd_sorted = sorted(scan_ix_and_hd, key=lambda x: x[1])
 
     cnt = 8
     worst = hd_sorted[:-cnt - 1:-1]
