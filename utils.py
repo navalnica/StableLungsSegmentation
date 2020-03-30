@@ -1,8 +1,11 @@
 import datetime
 import os
 import pickle
+import re
 import shutil
 import sys
+from collections import defaultdict
+from glob import glob
 
 import matplotlib.pyplot as plt
 import nibabel
@@ -12,8 +15,56 @@ import tqdm
 from tabulate import tabulate
 
 import augmentations
+import const
 
-separator = f'\n{"=" * 20}'
+
+def get_nii_gz_files(dp: str):
+    fps = glob(os.path.join(dp, '*.nii.gz'))
+    return fps
+
+
+def get_numpy_arr_from_nii_gz(fp: str):
+    """
+    Loads .nii.gz scan with nibabel and returns data as numpy array.
+    # TODO: use this function instead of nibebel.load(<filepath>).get_data()
+        everywhere in the code due to nibabel's deprecation behavior.
+    """
+    scan = nibabel.load(fp)
+    data = np.asanyarray(scan.dataobj)
+    return data
+
+
+def get_nii_file_id(fp: str):
+    """Extract idXXXX string from .nii.gz filepath"""
+    match = re.match(const.NII_GZ_FP_RE_PATTERN, fp)
+    if match is None:
+        raise ValueError(f'could not match file "{fp}" against re')
+    file_id = match.groups()[0]
+    return file_id
+
+
+def get_files_dict(scans_dp, masks_dp):
+    """"
+    create dict of the following structure:
+        id: {'scan': scan_filepath, 'mask': mask_filepath}
+    and leave only those ids that have both scans and masks
+    """
+
+    d = defaultdict(dict)
+
+    scans_fps = get_nii_gz_files(scans_dp)
+    for fp in scans_fps:
+        file_id = get_nii_file_id(fp)
+        d[file_id].update({'scan': fp})
+
+    masks_fps = get_nii_gz_files(masks_dp)
+    for fp in masks_fps:
+        file_id = get_nii_file_id(fp)
+        d[file_id].update({'mask': fp})
+
+    d_filtered = {k: v for (k, v) in d.items() if 'scan' in v and 'mask' in v}
+
+    return d_filtered
 
 
 def show_slices(

@@ -10,6 +10,7 @@ import tqdm
 from scipy.ndimage import morphology as morph, label
 
 import augmentations
+import const
 import utils
 
 
@@ -38,24 +39,22 @@ def zoom_nearest(matrix, zoom_factor):
     return res
 
 
-def filter_scan(scan):
-    lo_threshold = -1300
-    hi_threshold = 1500
-    res = np.where(scan < lo_threshold, lo_threshold, scan)
-    res = np.where(res > hi_threshold, hi_threshold, res)
+def clip_scan(scan, thresh_lo=const.BODY_THRESH_LOW, thresh_hi=const.BODY_THRESH_HIGH):
+    res = np.clip(scan, thresh_lo, thresh_hi)
     return res
 
 
-def get_binary_mask(source_mask):
-    thresh = -500
+def threshold_mask(source_mask: np.ndarray, thresh=const.MASK_BINARIZATION_THRESH):
     res = np.where(source_mask < thresh, 0, 1).astype(np.uint8)
     return res
 
 
-def calc_ct_body_mask(volume):
+def segment_body_from_scan(volume):
     """
-    segments body from the ct scan. removes table and background.
-    written by Eduard Sniazko
+    calculates body mask and removes table with background from the scan.
+
+    written by Eduard Sniazko.
+
     :param volume: 3D matrix
     """
 
@@ -109,63 +108,67 @@ def calc_ct_body_mask(volume):
     return img_vol_
 
 
-def preprocess_scan(scan, labels, aug_cnt, zoom_factor=0.25, to_log=False):
+def preprocess_scan(scan, labels, aug_cnt, zoom_factor=None, to_log=False):
     """
-    preprocess CT-scans: segment body, filter and augment slices, binarize lung labels.
+    preprocess single CT-scan:
+    segment body, clip values, add optional offline augmentations
+
     :param aug_cnt: number of augmentations per slice
     """
-    assert scan.shape == labels.shape, 'different shapes for the input arrays'
+    assert scan.shape == labels.shape, f'different shapes for input arrays: {scan.shape}, {labels.shape}'
 
-    labels = get_binary_mask(labels)
+    # TODO: check no failures
+    # labels = threshold_mask(labels)
+
     scan = scan.astype(np.float32)
-    segmented = calc_ct_body_mask(scan)
-    filtered = filter_scan(segmented)
-
     if to_log:
+        print('preprocess_scan():')
         utils.print_np_stats(scan, 'scan')
-        utils.print_np_stats(segmented, 'segmented')
-        utils.print_np_stats(filtered, 'filtered')
         utils.print_np_stats(labels, 'labels')
-        if zoom_factor is None:
-            print('no zoom set')
-        print(f'will perform {aug_cnt} augmenations per slice')
+        print(f'zoom factor: {zoom_factor}')
+        print(f'augmentations per slice: {aug_cnt}')
 
-    body_pixels_threshold = 100
-    lungs_pixels_threshold = 250
+    scan = segment_body_from_scan(scan)
+    if to_log:
+        utils.print_np_stats(scan, 'scan segmented')
+
+    scan = clip_scan(scan)
+    if to_log:
+        utils.print_np_stats(scan, 'scan clipped')
+
     unwanted_ix = []
-    res_scan = []
-    res_labels = []
+    res_body = []
+    res_mask = []
 
-    for z in range(filtered.shape[2]):
-        filtered_s = filtered[:, :, z]
-        labels_s = labels[:, :, z]
+    for z in range(scan.shape[2]):
+        body_slice = scan[:, :, z]
+        mask_slice = labels[:, :, z]
 
-        # check number of 1 label pixels before zoom.
-        # 1300 was set earlier as the low threshold for scan. it matches the background
-        if np.sum(labels_s) < lungs_pixels_threshold or \
-                np.sum(filtered_s > -1300) < body_pixels_threshold:
+        # check that slices have enough relevant pixels
+        if np.sum(mask_slice) < const.MASK_MIN_PIXELS_THRESH or \
+                np.sum(body_slice > const.BODY_THRESH_LOW) < const.BODY_MIN_PIXELS_THRESH:
             unwanted_ix.append(z)
             continue
 
         if zoom_factor is not None:
-            filtered_s = zoom_nearest(filtered_s, zoom_factor)
-            labels_s = zoom_nearest(labels_s, zoom_factor)
+            body_slice = zoom_nearest(body_slice, zoom_factor)
+            mask_slice = zoom_nearest(mask_slice, zoom_factor)
 
         if aug_cnt > 0:
-            slice_augs, labels_augs = augmentations.augment_slice(filtered_s, labels_s, aug_cnt)
-            res_scan.extend(slice_augs)
-            res_labels.extend(labels_augs)
+            body_augs, mask_augs = augmentations.augment_slice(body_slice, mask_slice, aug_cnt)
+            res_body.extend(body_augs)
+            res_mask.extend(mask_augs)
         else:
-            res_scan.append(filtered_s)
-            res_labels.append(labels_s)
+            res_body.append(body_slice)
+            res_mask.append(mask_slice)
 
-    res_scan = np.stack(res_scan, axis=2)
-    res_labels = np.stack(res_labels, axis=2)
+    res_body = np.stack(res_body, axis=2)
+    res_mask = np.stack(res_mask, axis=2)
 
     if to_log:
         print(f'{len(unwanted_ix)} unwanted indices: {unwanted_ix}')
-        utils.print_np_stats(res_scan, 'res_scan')
-        utils.print_np_stats(res_labels, 'res_labels')
-        print('res_labels unique values:', np.unique(res_labels))
+        utils.print_np_stats(res_body, 'res_body')
+        utils.print_np_stats(res_mask, 'res_mask')
+        print('res_mask unique values:', np.unique(res_mask))
 
-    return res_scan, res_labels, unwanted_ix
+    return res_body, res_mask, unwanted_ix

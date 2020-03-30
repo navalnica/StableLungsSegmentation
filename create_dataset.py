@@ -3,37 +3,40 @@
 # * 123, 163, 206 - тэлеграм
 # -----------------
 # дарабіць
-# * збалансаваць колькасць выпадкаў з захворваннем у train і valid
 # * паспрабаваць зменшыць колькасць фільтраў пры згортванні
 # * пашукаць альтэрнатывы для BatchNorm
 
 import os
-import re
 import shutil
 
-import nibabel
 import numpy as np
 import tqdm
 
+import const
 import preprocessing
 import utils
 
 
-def preprocessing_pipeline(scans_dict, res_dp, aug_cnt, zoom_factor=0.25):
-    if os.path.isdir(res_dp):
-        print(f'will remove dir {res_dp}')
-        shutil.rmtree(res_dp)
-    res_scans_dp = os.path.join(res_dp, 'scans')
-    res_labels_dp = os.path.join(res_dp, 'labels')
+def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt):
+    print(const.SEPARATOR)
+    print('preprocessing_pipeline():')
+
+    if os.path.isdir(out_dp):
+        print(f'will remove dir {out_dp}')
+        shutil.rmtree(out_dp)
+    res_scans_dp = os.path.join(out_dp, 'scans')
+    res_labels_dp = os.path.join(out_dp, 'masks')
     os.makedirs(res_scans_dp, exist_ok=True)
     os.makedirs(res_labels_dp, exist_ok=True)
 
-    with tqdm.tqdm(total=len(scans_dict)) as pbar:
-        for ix, (k, v) in enumerate(scans_dict.items()):
-            scan = nibabel.load(v['initial']).get_data()
-            labels = nibabel.load(v['fixed']).get_data()
+    with tqdm.tqdm(total=len(files_dict)) as pbar:
+        for ix, (k, v) in enumerate(files_dict.items()):
+            pbar.set_description(k)
+
+            scan = utils.get_numpy_arr_from_nii_gz(v['scan'])
+            mask = utils.get_numpy_arr_from_nii_gz(v['mask'])
             res_scan, res_labels, unwanted_indices = preprocessing.preprocess_scan(
-                scan, labels, aug_cnt=aug_cnt, zoom_factor=zoom_factor)
+                scan, mask, aug_cnt=aug_cnt, zoom_factor=zoom_factor)
 
             # check scans to have continuous lung mask
             breaks_cnt = np.sum(np.diff(unwanted_indices) > 1)
@@ -50,51 +53,24 @@ def preprocessing_pipeline(scans_dict, res_dp, aug_cnt, zoom_factor=0.25):
 
 
 def main():
-    datasets_dp = '/media/storage/datasets/kursavaja/7_sem/original_data'
-    initial_dp = os.path.join(datasets_dp, 'initial_ct')
-    resegm_dp = os.path.join(datasets_dp, 'resegm2_nii')
+    const.set_launch_type_env_var(True)
+    data_paths = const.DataPaths()
+    files_dict = utils.get_files_dict(data_paths.scans_dp, data_paths.masks_dp)
 
-    pat = r'id([\d]{3})[\w]*.nii.gz$'
-    initial_filenames = {
-        re.search(pat, x).groups()[0]:
-            os.path.join(initial_dp, x) for x in sorted(os.listdir(initial_dp))
-    }
-    resegm_filenames = {
-        re.search(pat, x).groups()[0]:
-            os.path.join(resegm_dp, x) for x in sorted(os.listdir(resegm_dp))
-    }
-    print('initial cnt: %d. resegm cnt: %d' % (len(initial_filenames), len(resegm_filenames)))
-    print(sorted(initial_filenames.keys() - resegm_filenames.keys()))
-    print(sorted(resegm_filenames.keys() - initial_filenames.keys()))
+    zoom_factor = const.ZOOM_FACTOR
+    processed_dp = data_paths.get_processed_dir(zoom_factor)
+    preprocessing_pipeline(files_dict, processed_dp, zoom_factor=zoom_factor, aug_cnt=0)
 
-    fixed_dp = os.path.realpath(os.path.join(datasets_dp, '../resegm2_fixed_nii'))
 
-    # print(utils.separator)
-    # print('fixing resegm2_nii labels')
-    # preprocessing.fix_resegm_masks(resegm_filenames, fixed_dp)
-
-    scans_dict = {
-        k: {
-            'initial': initial_filenames[k],
-            'resegm': resegm_filenames[k],
-            'fixed': os.path.join(fixed_dp, f'id{k}_resegm2_fixed.nii.gz')
-        }
-        for k in sorted(initial_filenames.keys() & resegm_filenames.keys())
-    }
-
-    print(utils.separator)
-    print('preprocessing scans and labels')
-    res_dp = os.path.realpath(os.path.join(datasets_dp, '../preprocessed_z0.25'))
-    preprocessing_pipeline(scans_dict, res_dp, aug_cnt=0)
-
-    # test
-    k = '155'
-    print(utils.separator)
-    print(f'test: loading scan {k}')
-    scan = np.load(os.path.join(res_dp, 'scans', f'{k}.npy'), allow_pickle=False)
-    labels = np.load(os.path.join(res_dp, 'labels', f'{k}.npy'), allow_pickle=False)
-    utils.print_np_stats(scan, 'scan')
-    utils.print_np_stats(labels, 'labels')
+def test():
+    pass
+    # k = '155'
+    # print(const.SEPARATOR)
+    # print(f'test: loading scan {k}')
+    # scan = np.load(os.path.join(processed_dp, 'scans', f'{k}.npy'), allow_pickle=False)
+    # labels = np.load(os.path.join(processed_dp, 'labels', f'{k}.npy'), allow_pickle=False)
+    # utils.print_np_stats(scan, 'scan')
+    # utils.print_np_stats(labels, 'labels')
 
 
 if __name__ == '__main__':
