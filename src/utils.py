@@ -23,15 +23,15 @@ def get_nii_gz_files(dp: str):
     return fps
 
 
-def get_numpy_arr_from_nii_gz(fp: str):
+def load_nifti(fp: str):
     """
-    Loads .nii.gz scan with nibabel and returns data as numpy array.
-    # TODO: use this function instead of nibebel.load(<filepath>).get_data()
+    Read .nii.gz image and return Nifti1Image together with numpy data array.
+    # TODO: use this function instead of nibabel.load(<filepath>).get_data()
         everywhere in the code due to nibabel's deprecation behavior.
     """
-    scan = nibabel.load(fp)
-    data = np.asanyarray(scan.dataobj)
-    return data
+    image = nibabel.load(fp)
+    data = np.asanyarray(image.dataobj)
+    return image, data
 
 
 def get_nii_file_id(fp: str):
@@ -50,21 +50,55 @@ def get_files_dict(scans_dp, masks_dp):
     and leave only those ids that have both scans and masks
     """
 
+    print(const.SEPARATOR)
+    print('get_files_dict()')
+
     d = defaultdict(dict)
 
     scans_fps = get_nii_gz_files(scans_dp)
+    print(f'# of scans found: {len(scans_fps)}')
     for fp in scans_fps:
         file_id = get_nii_file_id(fp)
         d[file_id].update({'scan': fp})
 
     masks_fps = get_nii_gz_files(masks_dp)
+    print(f'# of masks found: {len(masks_fps)}')
     for fp in masks_fps:
         file_id = get_nii_file_id(fp)
         d[file_id].update({'mask': fp})
 
     d_filtered = {k: v for (k, v) in d.items() if 'scan' in v and 'mask' in v}
+    print(f'# of (scan, mask) pairs found: {len(d_filtered)}')
 
     return d_filtered
+
+
+def change_nifti_data(
+        data_new: np.ndarray, nifti_original: nibabel.Nifti1Image, is_scan: bool
+):
+    """
+    Create new Nifti1Image based on new data array and previous header
+
+    :param data_new: new data array
+    :param nifti_original: previous scan or mask as Nifti1Image
+    :param is_scan: True indicates that scan data is passed, False - mask data
+    it helps to determine the right dtype to open scans or masks later with LesionLabeller
+    """
+    if is_scan:
+        data_new = data_new.astype(np.int16)
+    else:
+        data_new = data_new.astype(np.uint8)
+
+    header_new = nifti_original.header.copy()
+    header_new.set_data_shape(data_new.shape)
+    header_new.set_data_dtype(data_new.dtype)
+
+    nifti_new = nibabel.Nifti1Image(data_new, affine=nifti_original.affine, header=header_new)
+    return nifti_new
+
+
+def store_nifti_to_file(image: nibabel.Nifti1Image, fp: str):
+    image.to_filename(fp)
 
 
 def show_slices(

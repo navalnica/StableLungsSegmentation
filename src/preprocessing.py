@@ -117,9 +117,6 @@ def preprocess_scan(scan, labels, aug_cnt, zoom_factor=None, to_log=False):
     """
     assert scan.shape == labels.shape, f'different shapes for input arrays: {scan.shape}, {labels.shape}'
 
-    # TODO: check no failures
-    # labels = threshold_mask(labels)
-
     scan = scan.astype(np.float32)
     if to_log:
         print('preprocess_scan():')
@@ -144,7 +141,7 @@ def preprocess_scan(scan, labels, aug_cnt, zoom_factor=None, to_log=False):
         body_slice = scan[:, :, z]
         mask_slice = labels[:, :, z]
 
-        # check that slices have enough relevant pixels
+        # check that slices before zoom have enough relevant pixels
         if np.sum(mask_slice) < const.MASK_MIN_PIXELS_THRESH or \
                 np.sum(body_slice > const.BODY_THRESH_LOW) < const.BODY_MIN_PIXELS_THRESH:
             unwanted_ix.append(z)

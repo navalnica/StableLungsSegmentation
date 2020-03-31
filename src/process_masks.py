@@ -68,13 +68,13 @@ def check_masks_to_be_binary(masks_fps):
     with tqdm.tqdm(total=len(masks_fps)) as pbar:
         for fp in masks_fps:
             pbar.set_description(os.path.basename(fp))
-            mask = utils.get_numpy_arr_from_nii_gz(fp)
+            mask, mask_data = utils.load_nifti(fp)
 
-            if mask.dtype != np.uint8:
+            if mask_data.dtype != np.uint8:
                 wrong_masks.append(fp)
-                print(f'WARNING! "{os.path.basename(fp)}" has {mask.dtype} dtype')
+                print(f'WARNING! "{os.path.basename(fp)}" has {mask_data.dtype} dtype')
 
-            unique_values = np.unique(mask)
+            unique_values = np.unique(mask_data)
             if not np.array_equal(unique_values, [0, 1]):
                 wrong_masks.append(fp)
                 print(f'WARNING! "{os.path.basename(fp)}" is not binary. unique values: {unique_values}')

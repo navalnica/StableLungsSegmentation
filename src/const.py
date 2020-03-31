@@ -3,7 +3,7 @@ import os
 SEPARATOR = f'\n{"=" * 20}'
 
 _ROOT_DATA_DP_LOCAL = '/media/rtn/storage/datasets/lungs/dataset'
-_ROOT_DATA_DP_SERVER = '<todo>'  # TODO
+_ROOT_DATA_DP_SERVER = '/media/data10T_1/datasets/CRDF_5_tmp/dataset'
 
 NII_GZ_FP_RE_PATTERN = r'.*(id[\d]+).*\.nii\.gz'
 
@@ -12,8 +12,8 @@ BODY_THRESH_HIGH = 1500
 
 MASK_BINARIZATION_THRESH = -500
 
-BODY_MIN_PIXELS_THRESH = 300
-MASK_MIN_PIXELS_THRESH = 300
+BODY_MIN_PIXELS_THRESH = 600
+MASK_MIN_PIXELS_THRESH = 600
 
 ZOOM_FACTOR = 0.25
 
@@ -22,6 +22,8 @@ ENV_IS_SERVER_LAUNCH = 'IS_SERVER_LAUNCH'
 
 def set_launch_type_env_var(is_local_launch: bool):
     os.environ[ENV_IS_SERVER_LAUNCH] = '0' if is_local_launch else '1'
+    print(SEPARATOR)
+    print(f'set_launch_type_env_var(): {ENV_IS_SERVER_LAUNCH}: {os.environ[ENV_IS_SERVER_LAUNCH]}')
 
 
 class DataPaths:

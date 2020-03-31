@@ -1,7 +1,3 @@
-from matplotlib import pyplot as plt
-import numpy as np
-import os
-
 #
 # x = np.arange(-10, 10)
 # fig, ax = plt.subplots(1, 2)
