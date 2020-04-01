@@ -59,6 +59,33 @@ class DataPaths:
     def masks_raw_dp(self):
         return os.path.join(self._root_data_dp, 'original', 'masks_raw')
 
-    def get_processed_dir(self, zoom_factor=None):
+    def get_processed_dp(self, zoom_factor=None, mark_as_new=True):
+        """
+        get dir path where processed images are to be stored after dataset creation
+        :param mark_as_new: whether to add '_new' postfix to avoid occasional overwrite on the the ready dataset
+        """
         dirname = f'processed_z{zoom_factor}' if zoom_factor is not None else 'processed_no_zoom'
+        if mark_as_new:
+            dirname += '_new'
         return os.path.join(self._root_data_dp, dirname)
+
+    @staticmethod
+    def get_numpy_scans_dp(processed_dp):
+        return os.path.join(processed_dp, 'numpy', 'scans')
+
+    @staticmethod
+    def get_numpy_masks_dp(processed_dp):
+        return os.path.join(processed_dp, 'numpy', 'masks')
+
+    @staticmethod
+    def get_nifti_dp(processed_dp):
+        return os.path.join(processed_dp, 'nifti')
+
+    @staticmethod
+    def get_train_valid_split_fp(processed_dp, is_random_split=False):
+        split_fn = 'train_valid_split.json' if not is_random_split else 'train_valid_split_random.json'
+        return os.path.join(processed_dp, split_fn)
+
+    @staticmethod
+    def get_images_z_dimensions_fp(processed_dp):
+        return os.path.join(processed_dp, 'images_z.pickle')

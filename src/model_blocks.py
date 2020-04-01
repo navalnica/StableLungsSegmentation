@@ -225,7 +225,7 @@ def get_hd_for_valid_slices(net, device, loss_name, indices_valid, scans_dp, lab
     net.eval()
     n_valid = len(indices_valid)
 
-    valid_gen = utils.get_scans_and_labels_batches(
+    valid_gen = utils.get_scans_and_masks_batches(
         indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
     hd = []
     hd_avg = []
@@ -306,7 +306,7 @@ def visualize_worst_best(net, scan_ix_and_hd, average, scans_dp, labels_dp, devi
     best_values = [x[1] for x in best]
 
     for slice_indices, values, title in zip([worst_ix, best_ix], [worst_values, best_values], ['Worst', 'Best']):
-        gen = utils.get_scans_and_labels_batches(slice_indices, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
+        gen = utils.get_scans_and_masks_batches(slice_indices, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
         fig, ax = plt.subplots(2, cnt // 2, figsize=(5 * cnt // 2, 5 * 2), squeeze=False)
         net.eval()
         with torch.no_grad():

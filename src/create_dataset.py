@@ -86,7 +86,7 @@ def main(launch):
     files_dict = utils.get_files_dict(data_paths.scans_dp, data_paths.masks_dp)
 
     zoom_factor = const.ZOOM_FACTOR
-    processed_dp = data_paths.get_processed_dir(zoom_factor)
+    processed_dp = data_paths.get_processed_dp(zoom_factor)
     preprocessing_pipeline(files_dict, processed_dp, zoom_factor=zoom_factor, aug_cnt=0, store_nifti=True)
 
 

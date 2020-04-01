@@ -23,6 +23,11 @@ def get_nii_gz_files(dp: str):
     return fps
 
 
+def get_npy_files(dp: str):
+    fps = glob(os.path.join(dp, '*.npy'))
+    return fps
+
+
 def load_nifti(fp: str):
     """
     Read .nii.gz image and return Nifti1Image together with numpy data array.
@@ -190,31 +195,29 @@ def squeeze_and_to_numpy(tz):
     return tz.squeeze().cpu().detach().numpy()
 
 
-def get_scans_z_dimensions(scans_fns, scans_dp, restore_prev=True):
-    """extract z-dimension for each scan"""
-
-    scans_z_fp = os.path.realpath(f'{scans_dp}/../scans_z.pickle')
-
+def get_images_z_dimensions(images_fps, images_z_fp, restore_prev=True):
+    """extract z-dimension for each scan and store to .pickle"""
     if restore_prev:
-        if not os.path.isfile(scans_z_fp):
-            raise ValueError(f'no file found at {scans_z_fp}')
-        print(f'reading from {scans_z_fp}')
-        with open(scans_z_fp, 'rb') as fin:
-            scans_z = pickle.load(fin)
+        if not os.path.isfile(images_z_fp):
+            raise ValueError(f'no file found at {images_z_fp}')
+        print(f'reading from {images_z_fp}')
+        with open(images_z_fp, 'rb') as fin:
+            images_z = pickle.load(fin)
     else:
-        scans_z = {}
-        for fn in tqdm.tqdm(scans_fns):
-            scan = np.load(os.path.join(scans_dp, fn), allow_pickle=False)
-            scans_z[fn] = scan.shape[2]
-        print(f'storing scans_z to {scans_z_fp}')
-        with open(scans_z_fp, 'wb') as fout:
-            pickle.dump(scans_z, fout)
+        images_z = {}
+        for fp in tqdm.tqdm(images_fps):
+            scan = np.load(fp, allow_pickle=False)
+            bn = os.path.basename(fp)
+            images_z[bn] = scan.shape[2]
+        print(f'storing images_z to {images_z_fp}')
+        with open(images_z_fp, 'wb') as fout:
+            pickle.dump(images_z, fout)
 
-    return scans_z
+    return images_z
 
 
-def get_scans_and_labels_batches(
-        indices, scans_dp, labels_dp,
+def get_scans_and_masks_batches(
+        indices, scans_dp, masks_dp,
         source_slices_per_batch, aug_cnt, to_shuffle):
     """
     create generator that reads slices from numpy array and performs augmentations
@@ -233,36 +236,36 @@ def get_scans_and_labels_batches(
         for x in indices
     )
     scans_gen = foo(indices, scans_dp)
-    labels_gen = foo(indices, labels_dp)
+    masks_gen = foo(indices, masks_dp)
 
     if source_slices_per_batch is not None:
         # yield by batches
         batch_size = source_slices_per_batch * (1 + aug_cnt)
-        scans_batch, labels_batch, ix_batch = [], [], []
+        scans_batch, masks_batch, ix_batch = [], [], []
         cnt = 0
-        for s, l, ix in zip(scans_gen, labels_gen, indices):
-            scan_augs, labels_augs = augmentations.augment_slice(s, l, aug_cnt)
+        for s, m, ix in zip(scans_gen, masks_gen, indices):
+            scan_augs, mask_augs = augmentations.augment_slice(s, m, aug_cnt)
 
             # fig, ax = show_slices(scan_augs);
             # fig.savefig('scan_augs.png')
-            # fig, ax = show_slices(labels_augs);
-            # fig.savefig('labels_augs.png')
+            # fig, ax = show_slices(mask_augs);
+            # fig.savefig('mask_augs.png')
 
             scans_batch.extend(scan_augs)
-            labels_batch.extend(labels_augs)
+            masks_batch.extend(mask_augs)
             ix_batch.extend([ix] * (1 + aug_cnt))
             cnt += aug_cnt + 1
 
             if cnt % batch_size == 0:
-                yield (scans_batch, labels_batch, ix_batch)
-                scans_batch, labels_batch, ix_batch = [], [], []
+                yield (scans_batch, masks_batch, ix_batch)
+                scans_batch, masks_batch, ix_batch = [], [], []
                 cnt = 0
         if len(scans_batch) > 0:
-            yield (scans_batch, labels_batch, ix_batch)
+            yield (scans_batch, masks_batch, ix_batch)
     else:
         # yield by one item
-        for s, l, ix in zip(scans_gen, labels_gen, indices):
-            yield (s, l, ix)
+        for s, m, ix in zip(scans_gen, masks_gen, indices):
+            yield (s, m, ix)
 
 
 def print_cuda_memory_stats(device):

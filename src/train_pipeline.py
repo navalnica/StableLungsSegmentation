@@ -2,16 +2,16 @@
 #   * паспрабаваць зменшыць колькасць фільтраў пры згортванні
 #   * пашукаць альтэрнатывы для BatchNorm
 
-
 import copy
 import time
 
-from sklearn.model_selection import train_test_split
+import click
 from torch import optim
 from torch.nn import BCELoss
 
 from losses import *
 from model_blocks import *
+from train_valid_split import get_train_valid_indices
 from unet import UNet
 from utils import *
 
@@ -30,54 +30,6 @@ metrics = {type(func).__name__: func
                FocalLoss(gamma=2)
            ]}
 loss_name, loss_func = list(metrics.items())[1]
-
-
-def get_train_valid_indices(
-        scans_dp, labels_dp, val_percent=0.15, restore_prev_z_dims=True,
-        load_existing_train_valid_split=False, random_state=17,
-):
-    scans_fns = sorted(os.listdir(scans_dp))
-    labels_fns = sorted(os.listdir(labels_dp))
-
-    # check scans and labels filenames to match
-    sd = set(scans_fns).symmetric_difference(set(labels_fns))
-    if len(sd) != 0:
-        raise ValueError(f'found not matching files for scans and labels: {sd}')
-    del labels_fns
-    print('total scans count: %d' % len(scans_fns))
-
-    scans_z = get_scans_z_dimensions(scans_fns, scans_dp, restore_prev=restore_prev_z_dims)
-    n_slices_total = sum(scans_z.values())
-    print(f'total number of slices: {n_slices_total}')
-    print(f'example of scans_z: {list(scans_z.items())[:5]}')
-
-    if load_existing_train_valid_split:
-        existing_fns_dir = 'results/existing_filenames'
-        print(f'loading train, valid filenames from existing files under "{existing_fns_dir}"')
-        with open(f'{existing_fns_dir}/{loss_name}_filenames_train.txt') as fin:
-            fns_train = [x.strip() for x in fin.readlines() if x.strip()]
-        with open(f'{existing_fns_dir}/{loss_name}_filenames_valid.txt') as fin:
-            fns_valid = [x.strip() for x in fin.readlines() if x.strip()]
-    else:
-        print('performing train, test split')
-        fns_train, fns_valid = train_test_split(
-            scans_fns, random_state=random_state, test_size=val_percent)
-        print('train, valid filenames cnt: %d, %d' % (len(fns_train), len(fns_valid)))
-
-        print('storing train and valid filenames under "results" dir')
-        with open(f'results/{loss_name}_filenames_train.txt', 'w') as fout:
-            fout.writelines('\n'.join(sorted(fns_train)))
-        with open(f'results/{loss_name}_filenames_valid.txt', 'w') as fout:
-            fout.writelines('\n'.join(sorted(fns_valid)))
-
-    # create indices for each possible scan
-    indices_train = [(fn, z) for fn in fns_train for z in range(scans_z[fn])]
-    indices_valid = [(fn, z) for fn in fns_valid for z in range(scans_z[fn])]
-    n_train = len(indices_train)
-    n_valid = len(indices_valid)
-    print(f'n_train, n_valid: {n_train, n_valid}')
-    assert n_train + n_valid == n_slices_total, 'wrong number of train/valid slices'
-    return indices_train, indices_valid
 
 
 def train(
@@ -108,7 +60,7 @@ def train(
 
     net.to(device=device)
 
-    print(separator)
+    print(const.SEPARATOR)
     print('start of the training')
     print(f'parameters:\n\n'
           f'loss function: {loss_name}\n'
@@ -134,7 +86,7 @@ def train(
 
         # ----------- train ----------- #
         net.train()
-        train_gen = get_scans_and_labels_batches(
+        train_gen = get_scans_and_masks_batches(
             indices_train, scans_dp, labels_dp, source_slices_per_batch, aug_cnt, to_shuffle=True)
 
         for m_name, m_dict in em.items():
@@ -184,7 +136,7 @@ def train(
             )
 
         # ----------- validation ----------- #
-        valid_gen = get_scans_and_labels_batches(indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
+        valid_gen = get_scans_and_masks_batches(indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
         evaluation_res = evaluate_net(net, valid_gen, metrics, n_valid, device, f'epoch {cur_epoch}. valid')
 
         for m_name, m_dict in em.items():
@@ -206,13 +158,13 @@ def train(
             es_cnt += 1
 
         if es_cnt >= es_patience:
-            tqdm.tqdm.write(separator)
+            tqdm.tqdm.write(const.SEPARATOR)
             tqdm.tqdm.write(f'Early Stopping! no improvements for {es_patience} epochs for {loss_name} metric')
             break
 
     # ----------- save metrics ----------- #
     em_dump_fp = f'results/{loss_name}_epoch_metrics.pickle'
-    print(separator)
+    print(const.SEPARATOR)
     print(f'storing epoch metrics dict in "{em_dump_fp}"')
     with open(em_dump_fp, 'wb') as fout:
         pickle.dump(em, fout)
@@ -225,7 +177,7 @@ def train(
             os.path.join(checkpoints_dp, f'cp_{loss_name}_best.pth')
         )
 
-    print(separator)
+    print(const.SEPARATOR)
     train_time = time.time() - train_time_start
     print(f'training completed in {train_time // 60}m {train_time % 60 : .2f}s')
     print(f'best loss valid: {best_loss_valid : .4f}, best epoch: {best_epoch_ix}')
@@ -236,7 +188,7 @@ def train(
 def segment_scan(fns, net, device, scans_dp, labels_dp, dir='results'):
     cp_fp = 'results/existing_checkpoints/cp_BCELoss_epoch_9.pth'
 
-    print(separator)
+    print(const.SEPARATOR)
     print(f'loading existing model from "{cp_fp}"')
     net.to(device=device)
     state_dict = torch.load(cp_fp)
@@ -284,64 +236,71 @@ def build_total_hd_boxplot():
         build_multiple_hd_boxplots([x[1] for x in hd], avg, [x[0] for x in hd])
 
 
-def main():
-    cur_dataset_dp = '/media/storage/datasets/kursavaja/7_sem/preprocessed_z0.25'
-    # cur_dataset_dp = '/media/data/datasets/trafimau_lungs/preprocessed_z0.25'
+@click.command()
+@click.option('--launch', help='launch location',
+              type=click.Choice(['local', 'server']), default='local')
+def main(launch):
+    print(const.SEPARATOR)
+    print('train_pipeline()')
+
+    const.set_launch_type_env_var(launch == 'local')
+    data_paths = const.DataPaths()
+    processed_dp = data_paths.get_processed_dp(zoom_factor=0.25, mark_as_new=False)
+
+    scans_dp = const.DataPaths.get_numpy_scans_dp(processed_dp)
+    masks_dp = const.DataPaths.get_numpy_masks_dp(processed_dp)
 
     device = 'cuda:0'
     # device = 'cuda:1'
 
-    scans_dp = os.path.join(f'{cur_dataset_dp}/scans')
-    labels_dp = os.path.join(f'{cur_dataset_dp}/labels')
-
-    print(separator)
-    print('create "results" dir if needed')
     os.makedirs('results', exist_ok=True)
 
-    indices_train, indices_valid = get_train_valid_indices(
-        scans_dp, labels_dp, restore_prev_z_dims=True, load_existing_train_valid_split=False)
+    indices_train, indices_valid = get_train_valid_indices(processed_dp)
 
     net = UNet(n_channels=1, n_classes=1)
 
     # files = ['052.npy', '038.npy', '076.npy', '082.npy', '141.npy']
-    # segment_scan(files, net, device, scans_dp, labels_dp)
+    # segment_scan(files, net, device, scans_dp, masks_dp)
     # build_total_hd_boxplot()
     # return
 
+    # TODO: add as option
     to_train = True
 
     if to_train:
         np.random.shuffle(indices_train)  # shuffle before training on partial dataset
         optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+        # TODO: remove upper bounds
         em = train(
-            indices_train[:], indices_valid[:], scans_dp, labels_dp, net, optimizer,
-            source_slices_per_batch=4, aug_cnt=1, device=device, n_epochs=30)
+            indices_train[:], indices_valid[:], scans_dp, masks_dp, net, optimizer,
+            source_slices_per_batch=4, aug_cnt=1, device=device, n_epochs=8)
         plot_learning_curves(em)
 
     else:
         # loading best model
-        cp_fp = 'results/existing_checkpoints/cp_BCELoss_epoch_9.pth'
-        print(separator)
+        cp_fp = f'results/model_checkpoints/cp_{loss_name}_best.pth'
+        print(const.SEPARATOR)
         print(f'loading existing model from "{cp_fp}"')
 
         net.to(device=device)
         state_dict = torch.load(cp_fp)
         net.load_state_dict(state_dict)
 
-    print(separator)
+    print(const.SEPARATOR)
     print('evaluating model')
 
-    hd, hd_avg = get_hd_for_valid_slices(net, device, loss_name, indices_valid[:], scans_dp, labels_dp)
+    # TODO: remove upper bound
+    hd, hd_avg = get_hd_for_valid_slices(net, device, loss_name, indices_valid[:], scans_dp, masks_dp)
 
     hd_list = [x[1] for x in hd]
     build_hd_boxplot(hd_list, False, loss_name)
-    visualize_worst_best(net, hd, False, scans_dp, labels_dp, device, loss_name)
+    visualize_worst_best(net, hd, False, scans_dp, masks_dp, device, loss_name)
 
     hd_avg_list = [x[1] for x in hd_avg]
     build_hd_boxplot(hd_avg_list, True, loss_name)
-    visualize_worst_best(net, hd_avg, True, scans_dp, labels_dp, device, loss_name)
+    visualize_worst_best(net, hd_avg, True, scans_dp, masks_dp, device, loss_name)
 
-    print(separator)
+    print(const.SEPARATOR)
     print('cuda memory stats:')
     print_cuda_memory_stats(device)
 
