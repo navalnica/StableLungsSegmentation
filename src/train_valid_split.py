@@ -79,7 +79,7 @@ def get_train_valid_indices(processed_dp):
     print(const.SEPARATOR)
     print('train_valid_split.get_train_valid_indices()')
 
-    check_consistency(processed_dp)
+    # check_consistency(processed_dp, check_with_split=True)  # TODO: add 'ignore' list to split.json file
 
     scans_dp = const.DataPaths.get_numpy_scans_dp(processed_dp)
     scans_fps = utils.get_npy_files(scans_dp)
@@ -99,7 +99,7 @@ def get_train_valid_indices(processed_dp):
     n_train = len(indices_train)
     n_valid = len(indices_valid)
     print(f'n_train, n_valid: {n_train, n_valid}')
-    assert n_train + n_valid == n_slices_total, 'wrong number of train/valid slices'
+    # assert n_train + n_valid == n_slices_total, 'wrong number of train/valid slices'  # TODO: improve check
     return indices_train, indices_valid
 
 

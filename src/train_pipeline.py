@@ -9,10 +9,12 @@ import click
 from torch import optim
 from torch.nn import BCELoss
 
+import model.utils as mu
 from losses import *
-from model_blocks import *
+from model.unet import UNet
+from model.utils import segment_scans
 from train_valid_split import get_train_valid_indices
-from unet import UNet
+from train_valid_split import load_split_from_json
 from utils import *
 
 plt.rcParams['font.size'] = 13
@@ -32,7 +34,7 @@ metrics = {type(func).__name__: func
 loss_name, loss_func = list(metrics.items())[1]
 
 
-def train(
+def train_net(
         indices_train, indices_valid, scans_dp, labels_dp,
         net, optimizer, source_slices_per_batch, aug_cnt, device, n_epochs,
         checkpoints_dp='results/model_checkpoints'
@@ -57,8 +59,6 @@ def train(
     best_loss_valid = 1e+30
     best_epoch_ix = 0
     best_net_wts = copy.deepcopy(net.state_dict())
-
-    net.to(device=device)
 
     print(const.SEPARATOR)
     print('start of the training')
@@ -137,7 +137,7 @@ def train(
 
         # ----------- validation ----------- #
         valid_gen = get_scans_and_masks_batches(indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
-        evaluation_res = evaluate_net(net, valid_gen, metrics, n_valid, device, f'epoch {cur_epoch}. valid')
+        evaluation_res = mu.evaluate_net(net, valid_gen, metrics, n_valid, device, f'epoch {cur_epoch}. valid')
 
         for m_name, m_dict in em.items():
             if isinstance(m_dict, dict):
@@ -185,47 +185,6 @@ def train(
     return em
 
 
-def segment_scan(fns, net, device, scans_dp, labels_dp, dir='results'):
-    cp_fp = 'results/existing_checkpoints/cp_BCELoss_epoch_9.pth'
-
-    print(const.SEPARATOR)
-    print(f'loading existing model from "{cp_fp}"')
-    net.to(device=device)
-    state_dict = torch.load(cp_fp)
-    net.load_state_dict(state_dict)
-
-    net.eval()
-    with torch.no_grad():
-        for fn in fns:
-
-            os.makedirs(f'{dir}/bce/{fn}', exist_ok=True)
-            scan = np.load(f'{scans_dp}/{fn}', allow_pickle=False)
-            labels = np.load(f'{labels_dp}/{fn}', allow_pickle=False)
-
-            with tqdm.tqdm(total=scan.shape[2]) as pbar:
-                for z_ix in range(scan.shape[2]):
-                    x = scan[:, :, z_ix]
-                    y = labels[:, :, z_ix]
-                    x_t = torch.tensor(x, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
-                    preds = net(x_t)
-                    mask = (preds > 0.5).float()
-                    mask = utils.squeeze_and_to_numpy(mask).astype(np.int)
-
-                    slice_f = img_as_float((x - np.min(x)).astype(np.int))
-                    b_true = mark_boundaries(slice_f, y)
-                    b_pred = mark_boundaries(slice_f, mask.astype(np.int), color=(1, 0, 0))
-                    b = np.max([b_true, b_pred], axis=0)
-                    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-                    ax.imshow(slice_f, origin='lower')
-                    ax.imshow(b, alpha=.4, origin='lower')
-                    ax.set_title(f'{fn}. z = {z_ix}')
-                    ax.axis('off')
-                    fig.savefig(f'{dir}/bce/{fn}/{z_ix}.png', dpi=150)
-                    plt.close(fig)
-
-                    pbar.update()
-
-
 def build_total_hd_boxplot():
     for avg in [False, True]:
         hd = []
@@ -233,7 +192,75 @@ def build_total_hd_boxplot():
             with open(f'hd_to_plot/{m_name}_hd{"_avg" if avg else ""}_valid.pickle', 'rb') as fin:
                 hd_cur = pickle.load(fin)
                 hd.append((m_name, hd_cur))
-        build_multiple_hd_boxplots([x[1] for x in hd], avg, [x[0] for x in hd])
+        mu.build_multiple_hd_boxplots([x[1] for x in hd], avg, [x[0] for x in hd])
+
+
+class TrainPipeline:
+    net = None
+
+    def __init__(self, dataset_dp: str, device: str, n_epochs: int):
+        self.dataset_dp = dataset_dp
+        self.scans_dp = const.DataPaths.get_numpy_scans_dp(dataset_dp)
+        self.masks_dp = const.DataPaths.get_numpy_masks_dp(dataset_dp)
+        self.device = device
+        self.n_epochs = n_epochs
+
+        self.indices_train, self.indices_valid = get_train_valid_indices(self.dataset_dp)
+
+    def create_net(self):
+        self.net = UNet(n_channels=1, n_classes=1)
+        self.net.to(device=self.device)
+        return self.net
+
+    def train(self):
+        self.create_net()
+
+        np.random.shuffle(self.indices_train)  # shuffle before training on partial dataset
+        optimizer = optim.SGD(self.net.parameters(), lr=0.001, momentum=0.9)
+        # TODO: remove upper bounds
+        em = train_net(
+            self.indices_train[:], self.indices_valid[:], self.scans_dp, self.masks_dp, self.net, optimizer,
+            source_slices_per_batch=4, aug_cnt=1, device=self.device, n_epochs=self.n_epochs)
+        plot_learning_curves(em)
+
+    def load_net_from_weights(self, checkpoint_fp):
+        """load model parameters from checkpoint .pth file"""
+        print(const.SEPARATOR)
+        print(f'loading model parameters from "{checkpoint_fp}"')
+
+        self.create_net()
+
+        state_dict = torch.load(checkpoint_fp)
+        self.net.load_state_dict(state_dict)
+
+    def evaluate_model(self):
+        print(const.SEPARATOR)
+        print('evaluate_model()')
+
+        if self.net is None:
+            raise ValueError('must call train() or load_model() before evaluating')
+
+        # TODO: remove upper bound
+        hd, hd_avg = mu.get_hd_for_valid_slices(
+            self.net, self.device, loss_name, self.indices_valid[:], self.scans_dp, self.masks_dp
+        )
+
+        hd_list = [x[1] for x in hd]
+        mu.build_hd_boxplot(hd_list, False, loss_name)
+        mu.visualize_worst_best(self.net, hd, False, self.scans_dp, self.masks_dp, self.device, loss_name)
+
+        hd_avg_list = [x[1] for x in hd_avg]
+        mu.build_hd_boxplot(hd_avg_list, True, loss_name)
+        mu.visualize_worst_best(self.net, hd_avg, True, self.scans_dp, self.masks_dp, self.device, loss_name)
+
+    def segment_valid_scans(self, checkpoint_fp, segmented_masks_dp):
+        print(const.SEPARATOR)
+        print('segment_valid_scans()')
+
+        self.load_net_from_weights(checkpoint_fp)
+        fns_valid = load_split_from_json(self.dataset_dp)['valid']
+
+        segment_scans(fns_valid, self.net, self.device, self.dataset_dp, segmented_masks_dp)
 
 
 @click.command()
@@ -247,58 +274,23 @@ def main(launch):
     data_paths = const.DataPaths()
     processed_dp = data_paths.get_processed_dp(zoom_factor=0.25, mark_as_new=False)
 
-    scans_dp = const.DataPaths.get_numpy_scans_dp(processed_dp)
-    masks_dp = const.DataPaths.get_numpy_masks_dp(processed_dp)
-
     device = 'cuda:0'
     # device = 'cuda:1'
 
     os.makedirs('results', exist_ok=True)
 
-    indices_train, indices_valid = get_train_valid_indices(processed_dp)
-
-    net = UNet(n_channels=1, n_classes=1)
-
-    # files = ['052.npy', '038.npy', '076.npy', '082.npy', '141.npy']
-    # segment_scan(files, net, device, scans_dp, masks_dp)
-    # build_total_hd_boxplot()
-    # return
+    pipeline = TrainPipeline(dataset_dp=processed_dp, device=device, n_epochs=8)
 
     # TODO: add as option
-    to_train = True
+    to_train = False
 
     if to_train:
-        np.random.shuffle(indices_train)  # shuffle before training on partial dataset
-        optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-        # TODO: remove upper bounds
-        em = train(
-            indices_train[:], indices_valid[:], scans_dp, masks_dp, net, optimizer,
-            source_slices_per_batch=4, aug_cnt=1, device=device, n_epochs=8)
-        plot_learning_curves(em)
-
+        pipeline.train()
     else:
-        # loading best model
-        cp_fp = f'results/model_checkpoints/cp_{loss_name}_best.pth'
-        print(const.SEPARATOR)
-        print(f'loading existing model from "{cp_fp}"')
+        checkpoint_fp = f'results/model_checkpoints/cp_NegDiceLoss_best.pth'
+        pipeline.load_net_from_weights(checkpoint_fp)
 
-        net.to(device=device)
-        state_dict = torch.load(cp_fp)
-        net.load_state_dict(state_dict)
-
-    print(const.SEPARATOR)
-    print('evaluating model')
-
-    # TODO: remove upper bound
-    hd, hd_avg = get_hd_for_valid_slices(net, device, loss_name, indices_valid[:], scans_dp, masks_dp)
-
-    hd_list = [x[1] for x in hd]
-    build_hd_boxplot(hd_list, False, loss_name)
-    visualize_worst_best(net, hd, False, scans_dp, masks_dp, device, loss_name)
-
-    hd_avg_list = [x[1] for x in hd_avg]
-    build_hd_boxplot(hd_avg_list, True, loss_name)
-    visualize_worst_best(net, hd_avg, True, scans_dp, masks_dp, device, loss_name)
+    pipeline.evaluate_model()
 
     print(const.SEPARATOR)
     print('cuda memory stats:')

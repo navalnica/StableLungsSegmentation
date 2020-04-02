@@ -222,7 +222,7 @@ def get_scans_and_masks_batches(
     """
     create generator that reads slices from numpy array and performs augmentations
     :param indices: tuple (filename, z_index)
-    :param source_slices_per_batch: number of slices without augmentations. if None to yield scans one by one
+    :param source_slices_per_batch: number of slices without augmentations. if None yield scans one by one
     :param aug_cnt: number of augmentations per scan. has no effect if batch_size is None
     :param to_shuffle: whether to shuffle passed indices
     :return:
@@ -266,6 +266,18 @@ def get_scans_and_masks_batches(
         # yield by one item
         for s, m, ix in zip(scans_gen, masks_gen, indices):
             yield (s, m, ix)
+
+
+def get_single_image_slice_gen(filepath, batch_size=4):
+    scan = np.load(filepath, allow_pickle=False)
+
+    z_indices = list(range(scan.shape[2]))
+    batch_indices = [z_indices[a:a + batch_size] for a in range(0, scan.shape[2], batch_size)]
+
+    for bi in batch_indices:
+        cur_batch = scan[:, :, bi]  # array of shape (H, W, Z)
+        cur_batch = np.transpose(cur_batch, [2, 0, 1])  # array of shape (Z, H, W)
+        yield cur_batch
 
 
 def print_cuda_memory_stats(device):
