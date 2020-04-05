@@ -1,4 +1,4 @@
-from model_blocks import *
+from model.blocks import *
 
 
 class UNet(nn.Module):
