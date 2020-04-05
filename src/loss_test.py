@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from losses import FocalLoss
+from model.losses import FocalLoss
 
 
 def my_loss(output, target):

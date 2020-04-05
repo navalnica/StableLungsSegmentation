@@ -10,8 +10,8 @@ import numpy as np
 import tqdm
 
 import const
-import preprocessing
 import utils
+from data import preprocessing
 
 
 def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nifti=True):
@@ -70,8 +70,8 @@ def some_test():
     # k = '155'
     # print(const.SEPARATOR)
     # print(f'test: loading scan {k}')
-    # scan = np.load(os.path.join(processed_dp, 'scans', f'{k}.npy'), allow_pickle=False)
-    # labels = np.load(os.path.join(processed_dp, 'labels', f'{k}.npy'), allow_pickle=False)
+    # scan = np.load(os.path.join(dataset_dp, 'scans', f'{k}.npy'), allow_pickle=False)
+    # labels = np.load(os.path.join(dataset_dp, 'labels', f'{k}.npy'), allow_pickle=False)
     # utils.print_np_stats(scan, 'scan')
     # utils.print_np_stats(labels, 'labels')
 
@@ -86,8 +86,8 @@ def main(launch):
     files_dict = utils.get_files_dict(data_paths.scans_dp, data_paths.masks_dp)
 
     zoom_factor = const.ZOOM_FACTOR
-    processed_dp = data_paths.get_processed_dp(zoom_factor)
-    preprocessing_pipeline(files_dict, processed_dp, zoom_factor=zoom_factor, aug_cnt=0, store_nifti=True)
+    dataset_dp = data_paths.get_dataset_dp(zoom_factor)
+    preprocessing_pipeline(files_dict, dataset_dp, zoom_factor=zoom_factor, aug_cnt=0, store_nifti=True)
 
 
 if __name__ == '__main__':

@@ -2,13 +2,19 @@ import os
 import shutil
 
 import click
-import nibabel
 import numpy as np
 import tqdm
 
 import const
-import preprocessing
 import utils
+from data import preprocessing
+
+"""
+Process masks before creating dataset.
+This module can:
+* Process and add raw masks (masks that are not binarized) to dataset.
+* Check and add binary masks to dataset.
+"""
 
 
 def add_raw_masks(masks_raw_dp, masks_out_dp):
@@ -27,16 +33,13 @@ def add_raw_masks(masks_raw_dp, masks_out_dp):
         for fp in masks_raw_fps:
             pbar.set_description(os.path.basename(fp))
 
-            mask = nibabel.load(fp)
-            data = np.asanyarray(mask.dataobj)
+            mask_raw, data = utils.load_nifti(fp)
             data = preprocessing.threshold_mask(data)
+            mask_new = utils.change_nifti_data(data, mask_raw, is_scan=False)
 
             mask_id = utils.get_nii_file_id(fp)
             fp_new = os.path.join(masks_out_dp, f'{mask_id}_mask.nii.gz')
-
-            mask_new = nibabel.Nifti1Image(data, header=mask.header, affine=mask.affine)
-            mask_new.header.set_data_dtype(np.uint8)
-            nibabel.save(mask_new, fp_new)
+            utils.store_nifti_to_file(mask_new, fp_new)
 
             pbar.update()
 

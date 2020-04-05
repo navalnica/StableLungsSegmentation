@@ -14,8 +14,8 @@ import torch
 import tqdm
 from tabulate import tabulate
 
-import augmentations
 import const
+from data import augmentations
 
 
 def get_nii_gz_files(dp: str):
@@ -82,7 +82,7 @@ def change_nifti_data(
         data_new: np.ndarray, nifti_original: nibabel.Nifti1Image, is_scan: bool
 ):
     """
-    Create new Nifti1Image based on new data array and previous header
+    Create new Nifti1Image based on new data array and previous header.
 
     :param data_new: new data array
     :param nifti_original: previous scan or mask as Nifti1Image

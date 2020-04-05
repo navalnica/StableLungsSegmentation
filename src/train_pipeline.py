@@ -10,11 +10,11 @@ from torch import optim
 from torch.nn import BCELoss
 
 import model.utils as mu
-from losses import *
+from data.train_valid_split import get_train_valid_indices
+from data.train_valid_split import load_split_from_json
+from model.losses import *
 from model.unet import UNet
 from model.utils import segment_scans
-from train_valid_split import get_train_valid_indices
-from train_valid_split import load_split_from_json
 from utils import *
 
 plt.rcParams['font.size'] = 13
@@ -186,6 +186,7 @@ def train_net(
 
 
 def build_total_hd_boxplot():
+    """Build Hausdorff distance boxplots for multiple models on single plot"""
     for avg in [False, True]:
         hd = []
         for m_name in metrics:
@@ -200,8 +201,8 @@ class TrainPipeline:
 
     def __init__(self, dataset_dp: str, device: str, n_epochs: int):
         self.dataset_dp = dataset_dp
-        self.scans_dp = const.DataPaths.get_numpy_scans_dp(dataset_dp)
-        self.masks_dp = const.DataPaths.get_numpy_masks_dp(dataset_dp)
+        self.scans_dp = const.get_numpy_scans_dp(dataset_dp)
+        self.masks_dp = const.get_numpy_masks_dp(dataset_dp)
         self.device = device
         self.n_epochs = n_epochs
 
@@ -272,14 +273,14 @@ def main(launch):
 
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
-    processed_dp = data_paths.get_processed_dp(zoom_factor=0.25, mark_as_new=False)
+    dataset_dp = data_paths.get_dataset_dp(zoom_factor=0.25, mark_as_new=False)
 
     device = 'cuda:0'
     # device = 'cuda:1'
 
     os.makedirs('results', exist_ok=True)
 
-    pipeline = TrainPipeline(dataset_dp=processed_dp, device=device, n_epochs=8)
+    pipeline = TrainPipeline(dataset_dp=dataset_dp, device=device, n_epochs=8)
 
     # TODO: add as option
     to_train = False

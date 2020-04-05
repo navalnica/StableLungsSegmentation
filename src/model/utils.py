@@ -300,8 +300,8 @@ def segment_scan(fns, net, device, scans_dp, labels_dp, dir='results'):
 
 
 def segment_scans(filenames: str, net, device, dataset_dp, segmented_masks_dp):
-    scans_dp = const.DataPaths.get_numpy_scans_dp(dataset_dp)
-    nifti_dp = const.DataPaths.get_nifti_dp(dataset_dp)
+    scans_dp = const.get_numpy_scans_dp(dataset_dp)
+    nifti_dp = const.get_nifti_dp(dataset_dp)
 
     with tqdm.tqdm(total=len(filenames)) as pbar:
         for fn in filenames:

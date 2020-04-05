@@ -9,9 +9,9 @@ import numpy as np
 import tqdm
 from scipy.ndimage import morphology as morph, label
 
-import augmentations
 import const
 import utils
+from data import augmentations
 
 
 def fix_resegm_masks(resegm_filenames, fixed_dp):

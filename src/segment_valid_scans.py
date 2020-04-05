@@ -16,7 +16,7 @@ def main(launch):
 
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
-    processed_dp = data_paths.get_processed_dp(zoom_factor=0.25, mark_as_new=False)
+    dataset_dp = data_paths.get_dataset_dp(zoom_factor=0.25, mark_as_new=False)
 
     device = 'cuda:0'
     # device = 'cuda:1'
@@ -31,7 +31,7 @@ def main(launch):
         shutil.rmtree(segmented_masks_dp)
     os.makedirs(segmented_masks_dp, exist_ok=True)
 
-    pipeline = TrainPipeline(dataset_dp=processed_dp, device=device, n_epochs=8)
+    pipeline = TrainPipeline(dataset_dp=dataset_dp, device=device, n_epochs=8)
     pipeline.segment_valid_scans(checkpoint_fp, segmented_masks_dp)
 
 

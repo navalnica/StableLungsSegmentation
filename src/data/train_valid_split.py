@@ -8,15 +8,15 @@ import const
 import utils
 
 
-def split_randomly(processed_dp, val_percent=0.15, random_state=17):
+def split_randomly(dataset_dp, val_percent=0.15, random_state=17):
     """
     Split filename from scans_dp into train and valid sets.
     Assume that all images are present both in scans_dp and masks_dp.
     """
     print('data_train_test_split.split_randomly()')
 
-    scans_dp = const.DataPaths.get_numpy_scans_dp(processed_dp)
-    split_fp = const.DataPaths.get_train_valid_split_fp(processed_dp, is_random_split=True)
+    scans_dp = const.get_numpy_scans_dp(dataset_dp)
+    split_fp = const.get_train_valid_split_fp(dataset_dp, is_random_split=True)
 
     scans_fns = sorted([os.path.basename(x) for x in utils.get_npy_files(scans_dp)])
 
@@ -33,18 +33,18 @@ def split_randomly(processed_dp, val_percent=0.15, random_state=17):
         json.dump(train_valid_dict, out_stream, indent=4)
 
 
-def load_split_from_json(processed_dp):
-    split_fp = const.DataPaths.get_train_valid_split_fp(processed_dp)
+def load_split_from_json(dataset_dp):
+    split_fp = const.get_train_valid_split_fp(dataset_dp)
     with open(split_fp) as in_stream:
         split = json.load(in_stream)
     return split
 
 
-def check_consistency(processed_dp, check_with_split=False):
+def check_consistency(dataset_dp, check_with_split=False):
     print('data_train_test_split.check_consistency()')
 
-    scans_dp = const.DataPaths.get_numpy_scans_dp(processed_dp)
-    masks_dp = const.DataPaths.get_numpy_masks_dp(processed_dp)
+    scans_dp = const.get_numpy_scans_dp(dataset_dp)
+    masks_dp = const.get_numpy_masks_dp(dataset_dp)
 
     scans_fns = sorted([os.path.basename(x) for x in utils.get_npy_files(scans_dp)])
     masks_fns = sorted([os.path.basename(x) for x in utils.get_npy_files(masks_dp)])
@@ -55,7 +55,7 @@ def check_consistency(processed_dp, check_with_split=False):
     del masks_fns
 
     if check_with_split:
-        split = load_split_from_json(processed_dp)
+        split = load_split_from_json(dataset_dp)
         sd_scans_split = set(set(scans_fns)).symmetric_difference(
             np.concatenate([split['train'], split['valid']])
         )
@@ -63,30 +63,30 @@ def check_consistency(processed_dp, check_with_split=False):
             raise ValueError(f'next files are not found either in split or in scans dir: {sd_scans_split}')
 
 
-def store_z_dimensions_to_pickle(processed_dp):
+def store_z_dimensions_to_pickle(dataset_dp):
     print('data_train_test_split.store_z_dimensions_to_pickle()')
 
-    scans_dp = const.DataPaths.get_numpy_scans_dp(processed_dp)
+    scans_dp = const.get_numpy_scans_dp(dataset_dp)
     scans_fps = utils.get_npy_files(scans_dp)
-    images_z_fp = const.DataPaths.get_images_z_dimensions_fp(processed_dp)
+    images_z_fp = const.get_images_z_dimensions_fp(dataset_dp)
     _ = utils.get_images_z_dimensions(scans_fps, images_z_fp, restore_prev=False)
 
 
-def get_train_valid_indices(processed_dp):
+def get_train_valid_indices(dataset_dp):
     """
     Get (filename, z-index) tuples from existing train-valid split and images z-dimension dict
     """
     print(const.SEPARATOR)
     print('train_valid_split.get_train_valid_indices()')
 
-    # check_consistency(processed_dp, check_with_split=True)  # TODO: add 'ignore' list to split.json file
+    # check_consistency(dataset_dp, check_with_split=True)  # TODO: add 'ignore' list to split.json file
 
-    scans_dp = const.DataPaths.get_numpy_scans_dp(processed_dp)
+    scans_dp = const.get_numpy_scans_dp(dataset_dp)
     scans_fps = utils.get_npy_files(scans_dp)
-    images_z_fp = const.DataPaths.get_images_z_dimensions_fp(processed_dp)
+    images_z_fp = const.get_images_z_dimensions_fp(dataset_dp)
 
     images_z = utils.get_images_z_dimensions(scans_fps, images_z_fp)
-    split = load_split_from_json(processed_dp)
+    split = load_split_from_json(dataset_dp)
 
     n_slices_total = sum(images_z.values())
     print(f'# of images: {len(scans_fps)}')
@@ -105,10 +105,10 @@ def get_train_valid_indices(processed_dp):
 
 def main():
     # create images_z and train_valid_split manually
-    processed_dp = '/media/rtn/storage/datasets/lungs/dataset/processed_z0.25_new'
-    check_consistency(processed_dp, check_with_split=False)
-    split_randomly(processed_dp)
-    store_z_dimensions_to_pickle(processed_dp)
+    dataset_dp = '/media/rtn/storage/datasets/lungs/dataset/processed_z0.25_new'
+    check_consistency(dataset_dp, check_with_split=False)
+    split_randomly(dataset_dp)
+    store_z_dimensions_to_pickle(dataset_dp)
 
 
 if __name__ == '__main__':
