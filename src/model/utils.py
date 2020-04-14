@@ -1,8 +1,5 @@
-import os
 import pickle
-import re
 
-import nibabel
 import numpy as np
 import torch
 import tqdm
@@ -11,7 +8,6 @@ from skimage.segmentation import mark_boundaries
 from skimage.util import img_as_float
 from sklearn.metrics import pairwise_distances
 
-import const
 import utils
 from utils import get_single_image_slice_gen
 
@@ -258,83 +254,24 @@ def visualize_worst_best(net, scan_ix_and_hd, average, scans_dp, labels_dp, devi
         fig.savefig(f'{dir}/{loss_name}_hd_{"avg_" if average else ""}{title}.png', dpi=200)
 
 
-def segment_scan(fns, net, device, scans_dp, labels_dp, dir='results'):
-    cp_fp = 'results/existing_checkpoints/cp_BCELoss_epoch_9.pth'
-
-    print(const.SEPARATOR)
-    print(f'loading existing model from "{cp_fp}"')
-    net.to(device=device)
-    state_dict = torch.load(cp_fp)
-    net.load_state_dict(state_dict)
+def segment_single_scan(data: np.ndarray, net, device):
+    gen = get_single_image_slice_gen(data)
+    outs = []
 
     net.eval()
     with torch.no_grad():
-        for fn in fns:
+        for scan_slices in gen:
+            x = torch.tensor(scan_slices, dtype=torch.float, device=device).unsqueeze(1)
+            out = net(x)
+            out = utils.squeeze_and_to_numpy(out)
+            out = (out > 0.5).astype(np.uint8)
 
-            os.makedirs(f'{dir}/bce/{fn}', exist_ok=True)
-            scan = np.load(f'{scans_dp}/{fn}', allow_pickle=False)
-            labels = np.load(f'{labels_dp}/{fn}', allow_pickle=False)
+            if len(out.shape) == 2:
+                # `out` is an array of shape (H, W)
+                outs.append(out)
+            elif len(out.shape) == 3:
+                # `out` is an array of shape (N, H, W)
+                outs.extend(out)
 
-            with tqdm.tqdm(total=scan.shape[2]) as pbar:
-                for z_ix in range(scan.shape[2]):
-                    x = scan[:, :, z_ix]
-                    y = labels[:, :, z_ix]
-                    x_t = torch.tensor(x, dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
-                    preds = net(x_t)
-                    mask = (preds > 0.5).float()
-                    mask = utils.squeeze_and_to_numpy(mask).astype(np.int)
-
-                    slice_f = img_as_float((x - np.min(x)).astype(np.int))
-                    b_true = mark_boundaries(slice_f, y)
-                    b_pred = mark_boundaries(slice_f, mask.astype(np.int), color=(1, 0, 0))
-                    b = np.max([b_true, b_pred], axis=0)
-                    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-                    ax.imshow(slice_f, origin='lower')
-                    ax.imshow(b, alpha=.4, origin='lower')
-                    ax.set_title(f'{fn}. z = {z_ix}')
-                    ax.axis('off')
-                    fig.savefig(f'{dir}/bce/{fn}/{z_ix}.png', dpi=150)
-                    plt.close(fig)
-
-                    pbar.update()
-
-
-def segment_scans(filenames: str, net, device, dataset_dp, segmented_masks_dp):
-    scans_dp = const.get_numpy_scans_dp(dataset_dp)
-    nifti_dp = const.get_nifti_dp(dataset_dp)
-
-    with tqdm.tqdm(total=len(filenames)) as pbar:
-        for fn in filenames:
-            pbar.set_description(fn)
-
-            gen = get_single_image_slice_gen(os.path.join(scans_dp, fn))
-
-            outs = []
-
-            net.eval()
-            with torch.no_grad():
-                for scan_slices in gen:
-                    x = torch.tensor(scan_slices, dtype=torch.float, device=device).unsqueeze(1)
-                    out = net(x)
-                    out = utils.squeeze_and_to_numpy(out)
-                    out = (out > 0.5).astype(np.uint8)
-
-                    if len(out.shape) == 2:
-                        # `out` is an array of shape (H, W)
-                        outs.append(out)
-                    elif len(out.shape) == 3:
-                        # `out` is an array of shape (N, H, W)
-                        outs.extend(out)
-
-            out_combined = np.stack(outs, axis=2)
-
-            # load corresponding nifti image to extract header and store `out_combined` data as nifti
-            file_id = re.match(r'(id[\d]+)\.npy', fn).groups()[0]
-            nifti_fn = os.path.join(nifti_dp, f'{file_id}_autolungs.nii.gz')
-            nifti = nibabel.load(nifti_fn)
-            out_combined_nifti = utils.change_nifti_data(out_combined, nifti, is_scan=False)
-
-            out_fp = os.path.join(segmented_masks_dp, f'{file_id}_autolungs.nii.gz')
-            utils.store_nifti_to_file(out_combined_nifti, out_fp)
-
-            pbar.update()
+    out_combined = np.stack(outs, axis=2)  # stack along axis 2 to get array of shape (H, W, N)
+    return out_combined

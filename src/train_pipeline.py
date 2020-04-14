@@ -3,19 +3,26 @@
 #   * пашукаць альтэрнатывы для BatchNorm
 
 import copy
+import os
+import pickle
+import re
+import shutil
 import time
+from typing import List
 
 import click
+import numpy as np
+import tqdm
+from matplotlib import pyplot as plt
 from torch import optim
 from torch.nn import BCELoss
 
+import const
 import model.utils as mu
-from data.train_valid_split import get_train_valid_indices
-from data.train_valid_split import load_split_from_json
+import utils
+from data.train_valid_split import get_train_valid_indices, load_split_from_json
 from model.losses import *
 from model.unet import UNet
-from model.utils import segment_scans
-from utils import *
 
 plt.rcParams['font.size'] = 13
 plt.rcParams['axes.titlesize'] = 15
@@ -86,7 +93,7 @@ def train_net(
 
         # ----------- train ----------- #
         net.train()
-        train_gen = get_scans_and_masks_batches(
+        train_gen = utils.get_scans_and_masks_batches(
             indices_train, scans_dp, labels_dp, source_slices_per_batch, aug_cnt, to_shuffle=True)
 
         for m_name, m_dict in em.items():
@@ -136,7 +143,8 @@ def train_net(
             )
 
         # ----------- validation ----------- #
-        valid_gen = get_scans_and_masks_batches(indices_valid, scans_dp, labels_dp, None, aug_cnt=0, to_shuffle=False)
+        valid_gen = utils.get_scans_and_masks_batches(indices_valid, scans_dp, labels_dp, None, aug_cnt=0,
+                                                      to_shuffle=False)
         evaluation_res = mu.evaluate_net(net, valid_gen, metrics, n_valid, device, f'epoch {cur_epoch}. valid')
 
         for m_name, m_dict in em.items():
@@ -222,7 +230,7 @@ class TrainPipeline:
         em = train_net(
             self.indices_train[:], self.indices_valid[:], self.scans_dp, self.masks_dp, self.net, optimizer,
             source_slices_per_batch=4, aug_cnt=1, device=self.device, n_epochs=self.n_epochs)
-        plot_learning_curves(em)
+        utils.plot_learning_curves(em)
 
     def load_net_from_weights(self, checkpoint_fp):
         """load model parameters from checkpoint .pth file"""
@@ -254,6 +262,26 @@ class TrainPipeline:
         mu.build_hd_boxplot(hd_avg_list, True, loss_name)
         mu.visualize_worst_best(self.net, hd_avg, True, self.scans_dp, self.masks_dp, self.device, loss_name)
 
+    def segment_nifti_scans(self, checkpoint_fp: str, filepaths: List[str], out_dp):
+        print(const.SEPARATOR)
+        print('segment_scans()')
+
+        self.load_net_from_weights(checkpoint_fp)
+
+        with tqdm.tqdm(total=len(filepaths)) as pbar:
+            for fp in filepaths:
+                pbar.set_description(os.path.basename(fp))
+
+                scan_nifti, scan_data = utils.load_nifti(fp)
+                segmented_data = mu.segment_single_scan(scan_data, self.net, self.device)
+                segmented_nifti = utils.create_nifti_image_from_mask_data(segmented_data, scan_nifti)
+
+                scan_id = utils.get_nii_file_id(fp)
+                out_fp = os.path.join(out_dp, f'{scan_id}_autolungs.nii.gz')
+                utils.store_nifti_to_file(segmented_nifti, out_fp)
+
+                pbar.update()
+
     def segment_valid_scans(self, checkpoint_fp, segmented_masks_dp):
         print(const.SEPARATOR)
         print('segment_valid_scans()')
@@ -261,7 +289,26 @@ class TrainPipeline:
         self.load_net_from_weights(checkpoint_fp)
         fns_valid = load_split_from_json(self.dataset_dp)['valid']
 
-        segment_scans(fns_valid, self.net, self.device, self.dataset_dp, segmented_masks_dp)
+        scans_dp = const.get_numpy_scans_dp(self.dataset_dp)
+        nifti_dp = const.get_nifti_dp(self.dataset_dp)
+
+        with tqdm.tqdm(total=len(fns_valid)) as pbar:
+            for fn in fns_valid:
+                pbar.set_description(fn)
+
+                scan = utils.load_npy(os.path.join(scans_dp, fn))
+                segmented = mu.segment_single_scan(scan, self.net, self.device)
+
+                # load corresponding nifti image to extract header and store `out_combined` data as nifti
+                file_id = re.match(r'(id[\d]+)\.npy', fn).groups()[0]
+                nifti_fp = os.path.join(nifti_dp, f'{file_id}_autolungs.nii.gz')
+                nifti, _ = utils.load_nifti(nifti_fp)
+                segmented_nifti = utils.change_nifti_data(segmented, nifti, is_scan=False)
+
+                out_fp = os.path.join(segmented_masks_dp, f'{file_id}_autolungs.nii.gz')
+                utils.store_nifti_to_file(segmented_nifti, out_fp)
+
+                pbar.update()
 
 
 @click.command()

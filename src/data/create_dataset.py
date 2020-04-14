@@ -70,8 +70,8 @@ def some_test():
     # k = '155'
     # print(const.SEPARATOR)
     # print(f'test: loading scan {k}')
-    # scan = np.load(os.path.join(dataset_dp, 'scans', f'{k}.npy'), allow_pickle=False)
-    # labels = np.load(os.path.join(dataset_dp, 'labels', f'{k}.npy'), allow_pickle=False)
+    # scan = utils.load_npy(os.path.join(dataset_dp, 'scans', f'{k}.npy')
+    # labels = utils.load_npy(os.path.join(dataset_dp, 'labels', f'{k}.npy')
     # utils.print_np_stats(scan, 'scan')
     # utils.print_np_stats(labels, 'labels')
 

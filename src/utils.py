@@ -39,6 +39,11 @@ def load_nifti(fp: str):
     return image, data
 
 
+def load_npy(fp: str):
+    data = np.load(fp, allow_pickle=False)
+    return data
+
+
 def get_nii_file_id(fp: str):
     """Extract idXXXX string from .nii.gz filepath"""
     match = re.match(const.NII_GZ_FP_RE_PATTERN, fp)
@@ -104,6 +109,24 @@ def change_nifti_data(
 
 def store_nifti_to_file(image: nibabel.Nifti1Image, fp: str):
     image.to_filename(fp)
+
+
+def create_nifti_image_from_mask_data(mask_data: np.ndarray, scan_nifti: nibabel.Nifti1Image):
+    """
+    create Nifti1Image for uint8 mask created for specified scan
+    :param mask_data: np.ndarray with mask
+    :param scan_nifti: nifti scan for which mask was created. used to extract affine matrix and slope & intercept
+    """
+    mask_nifti = nibabel.Nifti1Image(mask_data, scan_nifti.affine)
+    assert mask_data.dtype == np.uint8
+    assert mask_nifti.get_data_dtype() == np.uint8
+
+    # set slope & intercept
+    slope, inter = scan_nifti.dataobj.slope, scan_nifti.dataobj.inter
+    assert (slope, inter) == (1, 0)
+    mask_nifti.header.set_slope_inter(slope, inter)
+
+    return mask_nifti
 
 
 def show_slices(
@@ -206,7 +229,7 @@ def get_images_z_dimensions(images_fps, images_z_fp, restore_prev=True):
     else:
         images_z = {}
         for fp in tqdm.tqdm(images_fps):
-            scan = np.load(fp, allow_pickle=False)
+            scan = load_npy(fp)
             bn = os.path.basename(fp)
             images_z[bn] = scan.shape[2]
         print(f'storing images_z to {images_z_fp}')
@@ -232,7 +255,7 @@ def get_scans_and_masks_batches(
         np.random.shuffle(indices)
 
     foo = lambda indices, dp: (
-        np.load(os.path.join(dp, x[0]), allow_pickle=False)[:, :, x[1]]
+        load_npy(os.path.join(dp, x[0]))[:, :, x[1]]
         for x in indices
     )
     scans_gen = foo(indices, scans_dp)
@@ -268,19 +291,18 @@ def get_scans_and_masks_batches(
             yield (s, m, ix)
 
 
-def get_single_image_slice_gen(filepath, batch_size=4):
-    scan = np.load(filepath, allow_pickle=False)
-
-    z_indices = list(range(scan.shape[2]))
-    batch_indices = [z_indices[a:a + batch_size] for a in range(0, scan.shape[2], batch_size)]
+def get_single_image_slice_gen(data: np.ndarray, batch_size=4):
+    z_indices = list(range(data.shape[2]))
+    batch_indices = [z_indices[a:a + batch_size] for a in range(0, data.shape[2], batch_size)]
 
     for bi in batch_indices:
-        cur_batch = scan[:, :, bi]  # array of shape (H, W, Z)
-        cur_batch = np.transpose(cur_batch, [2, 0, 1])  # array of shape (Z, H, W)
+        cur_batch = data[:, :, bi]  # now it's an array of shape (H, W, N)
+        cur_batch = np.transpose(cur_batch, [2, 0, 1])  # make it an array of shape (N, H, W)
         yield cur_batch
 
 
 def print_cuda_memory_stats(device):
+    # TODO: use humanize package to print human-readable values
     a = torch.cuda.memory_allocated(device=device) / 1024 / 1024
     am = torch.cuda.max_memory_allocated(device=device) / 1024 / 1024
     c = torch.cuda.memory_cached(device=device) / 1024 / 1024
