@@ -24,7 +24,7 @@ def add_raw_masks(masks_raw_dp, masks_out_dp):
     print(f'masks_raw_dp: {masks_raw_dp}')
     print(f'masks_out_dp: {masks_out_dp}')
 
-    masks_raw_fps = utils.get_nii_gz_files(masks_raw_dp)
+    masks_raw_fps = utils.get_nii_gz_filepaths(masks_raw_dp)
     print(f'# of raw masks to add: {len(masks_raw_fps)}')
 
     os.makedirs(masks_out_dp, exist_ok=True)
@@ -49,7 +49,7 @@ def add_binary_masks(masks_bin_dp, masks_out_dp, check_if_binary=False):
     print(f'masks_bin_dp: {masks_bin_dp}')
     print(f'masks_out_dp: {masks_out_dp}')
 
-    masks_fps = utils.get_nii_gz_files(masks_bin_dp)
+    masks_fps = utils.get_nii_gz_filepaths(masks_bin_dp)
     print(f'# of bin masks to add: {len(masks_fps)}')
 
     os.makedirs(masks_out_dp, exist_ok=True)

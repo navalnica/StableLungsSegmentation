@@ -16,7 +16,7 @@ def main(launch):
 
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
-    dataset_dp = data_paths.get_dataset_dp(zoom_factor=0.25, mark_as_new=False)
+    dataset_dp = data_paths.get_processed_dataset_dp(zoom_factor=0.25, mark_as_new=False)
 
     device = 'cuda:0'
     # device = 'cuda:1'

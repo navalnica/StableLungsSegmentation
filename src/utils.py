@@ -1,8 +1,5 @@
-import datetime
 import os
-import pickle
 import re
-import shutil
 import sys
 from collections import defaultdict
 from glob import glob
@@ -15,28 +12,36 @@ import tqdm
 from tabulate import tabulate
 
 import const
-from data import augmentations
 
 
-def get_nii_gz_files(dp: str):
+def get_nii_gz_filepaths(dp: str):
     fps = glob(os.path.join(dp, '*.nii.gz'))
     return fps
 
 
-def get_npy_files(dp: str):
+def get_npy_filepaths(dp: str):
     fps = glob(os.path.join(dp, '*.npy'))
     return fps
 
 
-def load_nifti(fp: str):
+def load_nifti(fp: str, load_data=True):
     """
-    Read .nii.gz image and return Nifti1Image together with numpy data array.
+    Read Nifti image and return Nifti1Image together with numpy data array.
     # TODO: use this function instead of nibabel.load(<filepath>).get_data()
         everywhere in the code due to nibabel's deprecation behavior.
     """
     image = nibabel.load(fp)
-    data = np.asanyarray(image.dataobj)
+    data = None if not load_data else np.asanyarray(image.dataobj)
     return image, data
+
+
+def load_nifti_slice(fp: str, ix: int):
+    """
+    Load single slice from Nifti image along z-axis
+    """
+    image = nibabel.load(fp)
+    slice = image.dataobj[:, :, ix]
+    return slice
 
 
 def load_npy(fp: str):
@@ -47,6 +52,15 @@ def load_npy(fp: str):
 def get_nii_file_id(fp: str):
     """Extract idXXXX string from .nii.gz filepath"""
     match = re.match(const.NII_GZ_FP_RE_PATTERN, fp)
+    if match is None:
+        raise ValueError(f'could not match file "{fp}" against re')
+    file_id = match.groups()[0]
+    return file_id
+
+
+def get_npy_file_id(fp: str):
+    """Extract idXXXX string from .npy filepath"""
+    match = re.match(const.NUMPY_FP_RE_PATTERN, fp)
     if match is None:
         raise ValueError(f'could not match file "{fp}" against re')
     file_id = match.groups()[0]
@@ -65,22 +79,27 @@ def get_files_dict(scans_dp, masks_dp):
 
     d = defaultdict(dict)
 
-    scans_fps = get_nii_gz_files(scans_dp)
-    print(f'# of scans found: {len(scans_fps)}')
+    scans_fps = get_nii_gz_filepaths(scans_dp)
     for fp in scans_fps:
         file_id = get_nii_file_id(fp)
-        d[file_id].update({'scan': fp})
+        d[file_id].update({'scan_fp': fp})
 
-    masks_fps = get_nii_gz_files(masks_dp)
-    print(f'# of masks found: {len(masks_fps)}')
+    masks_fps = get_nii_gz_filepaths(masks_dp)
     for fp in masks_fps:
         file_id = get_nii_file_id(fp)
-        d[file_id].update({'mask': fp})
+        d[file_id].update({'mask_fp': fp})
 
-    d_filtered = {k: v for (k, v) in d.items() if 'scan' in v and 'mask' in v}
-    print(f'# of (scan, mask) pairs found: {len(d_filtered)}')
+    d_intersection = {k: v for (k, v) in d.items() if 'scan_fp' in v and 'mask_fp' in v}
+    scans_wo_masks = [k for (k, v) in d.items() if 'scan_fp' in v and 'mask_fp' not in v]
+    masks_wo_scans = [k for (k, v) in d.items() if 'scan_fp' not in v and 'mask_fp' in v]
 
-    return d_filtered
+    print(f'# of scans found: {len(scans_fps)}')
+    print(f'# of masks found: {len(masks_fps)}')
+    print(f'# of images with scans and masks: {len(d_intersection)}')
+    print(f'list of scans without masks: {scans_wo_masks}')
+    print(f'list of masks without scans: {masks_wo_scans}')
+
+    return d_intersection
 
 
 def change_nifti_data(
@@ -184,18 +203,6 @@ def get_mid_slice(arr, matrix_axis=2):
     return data
 
 
-def copy_checkpoints_to_gdrive(checkpoints_dp):
-    date_str = datetime.date.today().strftime('%m.%d.%y')
-    gdrive_dest = f'/gdrive/My Drive/datasets/kursavaja_7_sem/{date_str}'
-    print(f'store checkpoints to {gdrive_dest}')
-
-    if os.path.isdir(gdrive_dest):
-        print('removed old dir')
-        shutil.rmtree(gdrive_dest)
-
-    shutil.copytree(checkpoints_dp, gdrive_dest)
-
-
 def plot_learning_curves(epoch_metrics, dir='results'):
     n_epochs = len(list(epoch_metrics.values())[0]['train'])
     loss_name = epoch_metrics['loss_name']
@@ -216,79 +223,6 @@ def plot_learning_curves(epoch_metrics, dir='results'):
 
 def squeeze_and_to_numpy(tz):
     return tz.squeeze().cpu().detach().numpy()
-
-
-def get_images_z_dimensions(images_fps, images_z_fp, restore_prev=True):
-    """extract z-dimension for each scan and store to .pickle"""
-    if restore_prev:
-        if not os.path.isfile(images_z_fp):
-            raise ValueError(f'no file found at {images_z_fp}')
-        print(f'reading from {images_z_fp}')
-        with open(images_z_fp, 'rb') as fin:
-            images_z = pickle.load(fin)
-    else:
-        images_z = {}
-        for fp in tqdm.tqdm(images_fps):
-            scan = load_npy(fp)
-            bn = os.path.basename(fp)
-            images_z[bn] = scan.shape[2]
-        print(f'storing images_z to {images_z_fp}')
-        with open(images_z_fp, 'wb') as fout:
-            pickle.dump(images_z, fout)
-
-    return images_z
-
-
-def get_scans_and_masks_batches(
-        indices, scans_dp, masks_dp,
-        source_slices_per_batch, aug_cnt, to_shuffle):
-    """
-    create generator that reads slices from numpy array and performs augmentations
-    :param indices: tuple (filename, z_index)
-    :param source_slices_per_batch: number of slices without augmentations. if None yield scans one by one
-    :param aug_cnt: number of augmentations per scan. has no effect if batch_size is None
-    :param to_shuffle: whether to shuffle passed indices
-    :return:
-    """
-
-    if to_shuffle:
-        np.random.shuffle(indices)
-
-    foo = lambda indices, dp: (
-        load_npy(os.path.join(dp, x[0]))[:, :, x[1]]
-        for x in indices
-    )
-    scans_gen = foo(indices, scans_dp)
-    masks_gen = foo(indices, masks_dp)
-
-    if source_slices_per_batch is not None:
-        # yield by batches
-        batch_size = source_slices_per_batch * (1 + aug_cnt)
-        scans_batch, masks_batch, ix_batch = [], [], []
-        cnt = 0
-        for s, m, ix in zip(scans_gen, masks_gen, indices):
-            scan_augs, mask_augs = augmentations.augment_slice(s, m, aug_cnt)
-
-            # fig, ax = show_slices(scan_augs);
-            # fig.savefig('scan_augs.png')
-            # fig, ax = show_slices(mask_augs);
-            # fig.savefig('mask_augs.png')
-
-            scans_batch.extend(scan_augs)
-            masks_batch.extend(mask_augs)
-            ix_batch.extend([ix] * (1 + aug_cnt))
-            cnt += aug_cnt + 1
-
-            if cnt % batch_size == 0:
-                yield (scans_batch, masks_batch, ix_batch)
-                scans_batch, masks_batch, ix_batch = [], [], []
-                cnt = 0
-        if len(scans_batch) > 0:
-            yield (scans_batch, masks_batch, ix_batch)
-    else:
-        # yield by one item
-        for s, m, ix in zip(scans_gen, masks_gen, indices):
-            yield (s, m, ix)
 
 
 def get_single_image_slice_gen(data: np.ndarray, batch_size=4):

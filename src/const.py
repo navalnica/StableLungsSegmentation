@@ -6,6 +6,7 @@ _ROOT_DATA_DP_LOCAL = '/media/rtn/storage/datasets/lungs/data'
 _ROOT_DATA_DP_SERVER = '/media/data10T_1/datasets/CRDF_5_tmp/dataset'
 
 NII_GZ_FP_RE_PATTERN = r'.*(id[\d]+).*\.nii\.gz'
+NUMPY_FP_RE_PATTERN = r'.*(id[\d]+)\.npy'
 
 BODY_THRESH_LOW = -1300
 BODY_THRESH_HIGH = 1500
@@ -26,8 +27,8 @@ def set_launch_type_env_var(is_local_launch: bool):
     print(f'set_launch_type_env_var(): {ENV_IS_SERVER_LAUNCH}: {os.environ[ENV_IS_SERVER_LAUNCH]}')
 
 
-def get_images_z_dimensions_fp(dataset_dp):
-    return os.path.join(dataset_dp, 'images_z.pickle')
+def get_shapes_fp(dataset_dp):
+    return os.path.join(dataset_dp, 'numpy', 'shapes.pickle')
 
 
 def get_train_valid_split_fp(dataset_dp, is_random_split=False):
@@ -80,7 +81,7 @@ class DataPaths:
     def masks_raw_dp(self):
         return os.path.join(self._root_data_dp, 'original', 'masks_raw')
 
-    def get_dataset_dp(self, zoom_factor=None, mark_as_new=True):
+    def get_processed_dataset_dp(self, zoom_factor=None, mark_as_new=True):
         """
         get dir path where processed images are to be stored after dataset creation
         :param mark_as_new: whether to add '_new' postfix to avoid occasional overwrite on the the ready dataset

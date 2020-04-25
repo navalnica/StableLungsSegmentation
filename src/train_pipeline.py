@@ -11,7 +11,6 @@ import time
 from typing import List
 
 import click
-import numpy as np
 import tqdm
 from matplotlib import pyplot as plt
 from torch import optim
@@ -20,7 +19,9 @@ from torch.nn import BCELoss
 import const
 import model.utils as mu
 import utils
-from data.train_valid_split import get_train_valid_indices, load_split_from_json
+from data.dataloader import DataLoader
+from data.datasets import NumpyDataset
+from data.train_valid_split import load_split_from_json
 from model.losses import *
 from model.unet import UNet
 
@@ -41,19 +42,18 @@ metrics = {type(func).__name__: func
 loss_name, loss_func = list(metrics.items())[1]
 
 
-def train_net(
-        indices_train, indices_valid, scans_dp, labels_dp,
-        net, optimizer, source_slices_per_batch, aug_cnt, device, n_epochs,
-        checkpoints_dp='results/model_checkpoints'
-):
+def train_net(net,
+              train_loader: DataLoader, valid_loader: DataLoader,
+              optimizer, device, n_epochs,
+              checkpoints_dp='results/model_checkpoints'):
     if os.path.isdir(checkpoints_dp):
         print(f'checkpoints dir "{checkpoints_dp}" exists. will remove and create new one')
         shutil.rmtree(checkpoints_dp)
     os.makedirs(checkpoints_dp, exist_ok=True)
 
-    n_train = len(indices_train) * (1 + aug_cnt)
-    n_valid = len(indices_valid)
-    batch_size = source_slices_per_batch * (1 + aug_cnt)
+    # TODO
+    n_train = len(train_loader)
+    n_valid = len(valid_loader)
 
     # early stopping variables
     es_cnt = 0
@@ -69,20 +69,17 @@ def train_net(
 
     print(const.SEPARATOR)
     print('start of the training')
-    print(f'parameters:\n\n'
+    print(f'train parameters:\n\n'
           f'loss function: {loss_name}\n'
           f'optimizer: {type(optimizer).__name__}\n'
           f'learning rate: {optimizer.defaults["lr"]}\n'
           f'momentum: {optimizer.defaults["momentum"]}\n'
           f'number of epochs: {n_epochs}\n'
           f'device: {device}\n'
-          f'source slices per batch: {source_slices_per_batch}\n'
-          f'augmentations per source slice: {aug_cnt}\n'
-          f'resultant batch size: {batch_size}\n'
-          f'actual train samples count: {n_train}\n'
-          f'actual valid samples count: {n_valid}\n'
           f'checkpoints dir: {os.path.abspath(checkpoints_dp)}\n'
           )
+    print(f'\ntrain_loader:\n{train_loader}')
+    print(f'\nvalid_loader:\n{valid_loader}')
 
     # count global time of training
     train_time_start = time.time()
@@ -93,8 +90,7 @@ def train_net(
 
         # ----------- train ----------- #
         net.train()
-        train_gen = utils.get_scans_and_masks_batches(
-            indices_train, scans_dp, labels_dp, source_slices_per_batch, aug_cnt, to_shuffle=True)
+        train_gen = train_loader.get_generator()
 
         for m_name, m_dict in em.items():
             if isinstance(m_dict, dict):
@@ -107,12 +103,6 @@ def train_net(
                 y = torch.tensor(labels, dtype=torch.float, device=device).unsqueeze(1)
 
                 out = net(x)
-
-                min, max = torch.min(out).item(), torch.max(out).item()
-                if min < 0 or max > 1:
-                    tqdm.tqdm.write(f'\n*** WARN ***\nbatch scans: {scans_ix}\nmin: {min}\tmax: {max}')
-                    continue
-
                 loss = metrics[loss_name](out, y)
 
                 optimizer.zero_grad()
@@ -121,6 +111,7 @@ def train_net(
 
                 # multiply to find sum of losses for all the batch items.
                 # use len(scans) instead of batch_size because they are not equal for the last batch
+                # TODO: what are the issues of using `reduction='sum'`? there was one as I remember
                 em[loss_name]['train'][-1] += loss.item() * len(scans)
 
                 with torch.no_grad():
@@ -143,8 +134,7 @@ def train_net(
             )
 
         # ----------- validation ----------- #
-        valid_gen = utils.get_scans_and_masks_batches(indices_valid, scans_dp, labels_dp, None, aug_cnt=0,
-                                                      to_shuffle=False)
+        valid_gen = valid_loader.get_generator()
         evaluation_res = mu.evaluate_net(net, valid_gen, metrics, n_valid, device, f'epoch {cur_epoch}. valid')
 
         for m_name, m_dict in em.items():
@@ -214,7 +204,7 @@ class TrainPipeline:
         self.device = device
         self.n_epochs = n_epochs
 
-        self.indices_train, self.indices_valid = get_train_valid_indices(self.dataset_dp)
+        self.split = load_split_from_json(dataset_dp)
 
     def create_net(self):
         self.net = UNet(n_channels=1, n_classes=1)
@@ -223,13 +213,15 @@ class TrainPipeline:
 
     def train(self):
         self.create_net()
-
-        np.random.shuffle(self.indices_train)  # shuffle before training on partial dataset
         optimizer = optim.SGD(self.net.parameters(), lr=0.001, momentum=0.9)
-        # TODO: remove upper bounds
-        em = train_net(
-            self.indices_train[:], self.indices_valid[:], self.scans_dp, self.masks_dp, self.net, optimizer,
-            source_slices_per_batch=4, aug_cnt=1, device=self.device, n_epochs=self.n_epochs)
+
+        train_dataset = NumpyDataset(self.dataset_dp, self.split['train'])
+        valid_dataset = NumpyDataset(self.dataset_dp, self.split['valid'])
+        train_loader = DataLoader(train_dataset, orig_img_per_batch=4, aug_cnt=1, to_shuffle=True)
+        valid_loader = DataLoader(valid_dataset, orig_img_per_batch=4, aug_cnt=0, to_shuffle=False)
+
+        em = train_net(self.net, train_loader, valid_loader,
+                       optimizer, device=self.device, n_epochs=self.n_epochs)
         utils.plot_learning_curves(em)
 
     def load_net_from_weights(self, checkpoint_fp):
@@ -320,7 +312,7 @@ def main(launch):
 
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
-    dataset_dp = data_paths.get_dataset_dp(zoom_factor=0.25, mark_as_new=False)
+    dataset_dp = data_paths.get_processed_dataset_dp(zoom_factor=0.25, mark_as_new=False)
 
     device = 'cuda:0'
     # device = 'cuda:1'
@@ -342,7 +334,7 @@ def main(launch):
 
     print(const.SEPARATOR)
     print('cuda memory stats:')
-    print_cuda_memory_stats(device)
+    utils.print_cuda_memory_stats(device)
 
 
 if __name__ == '__main__':

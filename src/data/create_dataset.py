@@ -27,6 +27,7 @@ def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nif
     os.makedirs(numpy_scans_dp, exist_ok=True)
     os.makedirs(numpy_masks_dp, exist_ok=True)
 
+    nifti_dp = None
     if store_nifti:
         nifti_dp = os.path.join(out_dp, 'nifti')
         os.makedirs(nifti_dp, exist_ok=True)
@@ -35,8 +36,8 @@ def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nif
         for ix, (k, v) in enumerate(files_dict.items()):
             pbar.set_description(k)
 
-            scan, scan_data = utils.load_nifti(v['scan'])
-            mask, mask_data = utils.load_nifti(v['mask'])
+            scan, scan_data = utils.load_nifti(v['scan_fp'])
+            mask, mask_data = utils.load_nifti(v['mask_fp'])
             res_scan_data, res_mask_data, unwanted_indices = preprocessing.preprocess_scan(
                 scan_data, mask_data, aug_cnt=aug_cnt, zoom_factor=zoom_factor)
 
@@ -86,7 +87,7 @@ def main(launch):
     files_dict = utils.get_files_dict(data_paths.scans_dp, data_paths.masks_dp)
 
     zoom_factor = const.ZOOM_FACTOR
-    dataset_dp = data_paths.get_dataset_dp(zoom_factor)
+    dataset_dp = data_paths.get_processed_dataset_dp(zoom_factor)
     preprocessing_pipeline(files_dict, dataset_dp, zoom_factor=zoom_factor, aug_cnt=0, store_nifti=True)
 
 
