@@ -3,6 +3,7 @@ from typing import List
 from torch.utils.data import Dataset
 
 import utils
+from data import preprocessing
 
 
 class NiftiDataset(Dataset):
@@ -45,9 +46,15 @@ class NiftiDataset(Dataset):
         cur_id = cur_info['id']
         z_ix = cur_info['z_ix']
 
+        scan = utils.load_nifti_slice(cur_info['scan_fp'], z_ix)
+        mask = utils.load_nifti_slice(cur_info['mask_fp'], z_ix)
+
+        # transforms
+        scan = preprocessing.clip_intensities(scan)
+
         sample = {
-            'scan': utils.load_nifti_slice(cur_info['scan_fp'], z_ix),
-            'mask': utils.load_nifti_slice(cur_info['mask_fp'], z_ix),
+            'scan': scan,
+            'mask': mask,
             'description': f'{cur_id}_{z_ix}'
         }
         return sample

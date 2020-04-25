@@ -181,7 +181,12 @@ def augment_slice(scan, labels, aug_cnt=3):
         im_s_aug = augment(im_s_copy, aug_vector)
         scan_t = im_s_aug[:, :, 0]
         label_t = im_s_aug[:, :, 1]
-        assert sorted(np.unique(label_t)) == [0.0, 1.0]
+
+        # check that no values besides {0, 1} are present in labels array
+        labels_unique_values = np.unique(label_t)
+        assert np.setdiff1d(labels_unique_values, [0, 1]).size == 0, \
+            f'unique values in labels array: {labels_unique_values}'
+
         label_t = label_t.astype(np.uint8)
         scans_aug.append(scan_t)
         labels_aug.append(label_t)

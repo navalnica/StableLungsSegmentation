@@ -38,7 +38,7 @@ def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nif
 
             scan, scan_data = utils.load_nifti(v['scan_fp'])
             mask, mask_data = utils.load_nifti(v['mask_fp'])
-            res_scan_data, res_mask_data, unwanted_indices = preprocessing.preprocess_scan(
+            res_scan_data, res_mask_data, unwanted_indices = preprocessing.process_scan_and_mask(
                 scan_data, mask_data, aug_cnt=aug_cnt, zoom_factor=zoom_factor)
 
             # check scans to have continuous lung mask
