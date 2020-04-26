@@ -5,8 +5,8 @@ SEPARATOR = f'\n{"=" * 20}'
 _ROOT_DATA_DP_LOCAL = '/media/rtn/storage/datasets/lungs/data'
 _ROOT_DATA_DP_SERVER = '/media/data10T_1/datasets/CRDF_5_tmp/dataset'
 
-NII_GZ_FP_RE_PATTERN = r'.*(id[\d]+).*\.nii\.gz'
-NUMPY_FP_RE_PATTERN = r'.*(id[\d]+)\.npy'
+# changing groups order might change `utils.parse_image_id_from_filepath` function
+IMAGE_FP_RE_PATTERN = r'(.*\/?)(id[\d]+)_*([^\/]*?)\.(npy|nii\.gz)'
 
 BODY_THRESH_LOW = -1300
 BODY_THRESH_HIGH = 1500

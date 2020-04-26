@@ -49,45 +49,49 @@ def load_npy(fp: str):
     return data
 
 
-def get_nii_file_id(fp: str):
-    """Extract idXXXX string from .nii.gz filepath"""
-    match = re.match(const.NII_GZ_FP_RE_PATTERN, fp)
+def parse_image_id_from_filepath(fp: str, get_postfix=False):
+    """Extract 'idXXXX' and optional postfix from .nii.gz or .npy filepath"""
+    match = re.match(const.IMAGE_FP_RE_PATTERN, fp)
     if match is None:
         raise ValueError(f'could not match file "{fp}" against re')
-    file_id = match.groups()[0]
-    return file_id
+    file_id = match.groups()[1]
+    file_postfix = match.groups()[2]
+    res = file_id if not get_postfix else (file_id, file_postfix)
+    return res
 
 
-def get_npy_file_id(fp: str):
-    """Extract idXXXX string from .npy filepath"""
-    match = re.match(const.NUMPY_FP_RE_PATTERN, fp)
-    if match is None:
-        raise ValueError(f'could not match file "{fp}" against re')
-    file_id = match.groups()[0]
-    return file_id
-
-
-def get_files_dict(scans_dp, masks_dp):
+def get_files_dict(scans_dp, masks_dp, mask_postfixes=('autolungs', 'mask')):
     """"
-    create dict of the following structure:
-        id: {'scan': scan_filepath, 'mask': mask_filepath}
-    and leave only those ids that have both scans and masks
+    Create dict of the following structure:
+    `img_id: {'scan_fp': scan_filepath, 'mask_fp': mask_filepath}`
+    and leave only those images that have both scans and masks.
+    Function uses id and postfix (optionally) parsed from image filepath.
+    If `scans_dp == masks_dp` then scan files only with '' postfix are selected
+    and mask files only with postfix in `mask_postfixes` are selected.
     """
 
     print(const.SEPARATOR)
     print('get_files_dict()')
 
     d = defaultdict(dict)
+    same_dirs = (scans_dp == masks_dp)
+    print(f'scans_dp == masks_dp: {same_dirs}')
+    if same_dirs:
+        print(f'will selected masks only with postfix in {mask_postfixes} and scans without any postfix')
+    else:
+        print('will read any .nii.gz files in both scans_dp and masks_dp folders')
 
     scans_fps = get_nii_gz_filepaths(scans_dp)
     for fp in scans_fps:
-        file_id = get_nii_file_id(fp)
-        d[file_id].update({'scan_fp': fp})
+        img_id, img_postfix = parse_image_id_from_filepath(fp, get_postfix=True)
+        if not same_dirs or not img_postfix:
+            d[img_id].update({'scan_fp': fp})
 
     masks_fps = get_nii_gz_filepaths(masks_dp)
     for fp in masks_fps:
-        file_id = get_nii_file_id(fp)
-        d[file_id].update({'mask_fp': fp})
+        img_id, img_postfix = parse_image_id_from_filepath(fp, get_postfix=True)
+        if not same_dirs or img_postfix in mask_postfixes:
+            d[img_id].update({'mask_fp': fp})
 
     d_intersection = {k: v for (k, v) in d.items() if 'scan_fp' in v and 'mask_fp' in v}
     scans_wo_masks = [k for (k, v) in d.items() if 'scan_fp' in v and 'mask_fp' not in v]

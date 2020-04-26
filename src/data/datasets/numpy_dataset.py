@@ -65,7 +65,7 @@ class NumpyDataset(Dataset):
 
         shapes = {}
         for cur_scan_fp, cur_mask_fp in tqdm.tqdm(zip(scans_fps, masks_fps)):
-            cur_id = utils.get_npy_file_id(cur_scan_fp)
+            cur_id = utils.parse_image_id_from_filepath(cur_scan_fp)
             scan = utils.load_npy(cur_scan_fp)
             mask = utils.load_npy(cur_mask_fp)
 

@@ -37,7 +37,7 @@ def add_raw_masks(masks_raw_dp, masks_out_dp):
             data = preprocessing.threshold_mask(data)
             mask_new = utils.change_nifti_data(data, mask_raw, is_scan=False)
 
-            mask_id = utils.get_nii_file_id(fp)
+            mask_id = utils.parse_image_id_from_filepath(fp)
             fp_new = os.path.join(masks_out_dp, f'{mask_id}_mask.nii.gz')
             utils.store_nifti_to_file(mask_new, fp_new)
 
@@ -59,7 +59,7 @@ def add_binary_masks(masks_bin_dp, masks_out_dp, check_if_binary=False):
 
     # copy them into masks_out_dp
     for fp in masks_fps:
-        mask_id = utils.get_nii_file_id(fp)
+        mask_id = utils.parse_image_id_from_filepath(fp)
         fp_new = os.path.join(masks_out_dp, f'{mask_id}_mask.nii.gz')
         shutil.copyfile(fp, fp_new)
 

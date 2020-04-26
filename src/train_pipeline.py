@@ -5,7 +5,6 @@
 import copy
 import os
 import pickle
-import re
 import shutil
 import time
 from typing import List
@@ -268,7 +267,7 @@ class TrainPipeline:
                 segmented_data = mu.segment_single_scan(scan_data, self.net, self.device)
                 segmented_nifti = utils.create_nifti_image_from_mask_data(segmented_data, scan_nifti)
 
-                scan_id = utils.get_nii_file_id(fp)
+                scan_id = utils.parse_image_id_from_filepath(fp)
                 out_fp = os.path.join(out_dp, f'{scan_id}_autolungs.nii.gz')
                 utils.store_nifti_to_file(segmented_nifti, out_fp)
 
@@ -292,12 +291,12 @@ class TrainPipeline:
                 segmented = mu.segment_single_scan(scan, self.net, self.device)
 
                 # load corresponding nifti image to extract header and store `out_combined` data as nifti
-                file_id = re.match(r'(id[\d]+)\.npy', fn).groups()[0]
-                nifti_fp = os.path.join(nifti_dp, f'{file_id}_autolungs.nii.gz')
+                img_id = utils.parse_image_id_from_filepath(fn)
+                nifti_fp = os.path.join(nifti_dp, f'{img_id}_autolungs.nii.gz')
                 nifti, _ = utils.load_nifti(nifti_fp)
                 segmented_nifti = utils.change_nifti_data(segmented, nifti, is_scan=False)
 
-                out_fp = os.path.join(segmented_masks_dp, f'{file_id}_autolungs.nii.gz')
+                out_fp = os.path.join(segmented_masks_dp, f'{img_id}_autolungs.nii.gz')
                 utils.store_nifti_to_file(segmented_nifti, out_fp)
 
                 pbar.update()
