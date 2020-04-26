@@ -1,3 +1,4 @@
+import datetime
 import os
 import re
 import sys
@@ -5,6 +6,7 @@ from collections import defaultdict
 from glob import glob
 from typing import List
 
+import humanize
 import matplotlib.pyplot as plt
 import nibabel
 import numpy as np
@@ -13,6 +15,11 @@ import tqdm
 from tabulate import tabulate
 
 import const
+
+
+def get_class_name(cls):
+    name = type(cls).__name__
+    return name
 
 
 def get_nii_gz_filepaths(dp: str):
@@ -161,6 +168,12 @@ def create_nifti_image_from_mask_data(mask_data: np.ndarray, scan_nifti: nibabel
     return mask_nifti
 
 
+def seconds_to_str(delta_seconds: float):
+    trimmed = int(np.ceil(delta_seconds))  # trim microseconds
+    res = str(datetime.timedelta(seconds=trimmed))
+    return res
+
+
 def show_slices(
         slices, titles=None,
         cols=4, width=5, height=5, to_show_axis=False
@@ -216,22 +229,28 @@ def get_mid_slice(arr, matrix_axis=2):
     return data
 
 
-def plot_learning_curves(epoch_metrics, dir='results'):
-    n_epochs = len(list(epoch_metrics.values())[0]['train'])
-    loss_name = epoch_metrics['loss_name']
+def store_learning_curves(history: dict, out_dir: str = None):
+    """
+    :param history: dict of following structure:
+    '<metric name>' : {'train': List[float], 'valid': Lists[float]}
+    :param out_dir: directory path to save plots
+    """
+    loss_name = history['loss_name']
+    metrics = history['metrics']
+    n_epochs = len(list(metrics.values())[0]['train'])
+
     x = np.arange(1, n_epochs + 1)
-    fig, ax = plt.subplots(1, len(epoch_metrics) - 1, figsize=(6 * len(epoch_metrics), 5), squeeze=False)
+    fig, ax = plt.subplots(1, len(metrics), figsize=(6 * len(metrics), 5), squeeze=False)
     fig.suptitle(f'loss: {loss_name}. epochs: {n_epochs}')
 
-    for (m_name, m_dict), _ax in zip(epoch_metrics.items(), ax.flatten()):
-        if type(m_dict) == type(dict()):
-            _ax.plot(x, epoch_metrics[m_name]['train'], marker='o', label='train')
-            _ax.plot(x, epoch_metrics[m_name]['valid'], marker='o', label='valid')
-            _ax.set_title(m_name)
-            _ax.grid()
-            _ax.legend()
+    for (m_name, m_dict), cur_ax in zip(metrics.items(), ax.flatten()):
+        cur_ax.plot(x, metrics[m_name]['train'], marker='o', label='train')
+        cur_ax.plot(x, metrics[m_name]['valid'], marker='o', label='valid')
+        cur_ax.set_title(m_name)
+        cur_ax.grid()
+        cur_ax.legend()
 
-    fig.savefig(f'{dir}/{loss_name}_learning_curves.png', dpi=200)
+    fig.savefig(f'{out_dir}/learning_curves_{loss_name}.png', dpi=200)
 
 
 def squeeze_and_to_numpy(tz):
@@ -249,12 +268,14 @@ def get_single_image_slice_gen(data: np.ndarray, batch_size=4):
 
 
 def print_cuda_memory_stats(device):
-    # TODO: use humanize package to print human-readable values
-    a = torch.cuda.memory_allocated(device=device) / 1024 / 1024
-    am = torch.cuda.max_memory_allocated(device=device) / 1024 / 1024
-    c = torch.cuda.memory_cached(device=device) / 1024 / 1024
-    cm = torch.cuda.max_memory_cached(device=device) / 1024 / 1024
-    print(f'allocated: {a : .2f} (max: {am : .2f}), cached: {c : .2f} (max: {cm : .2f})')
+    print(const.SEPARATOR)
+    print('cuda memory stats:')
+
+    a = humanize.naturalsize(torch.cuda.memory_allocated(device=device))
+    am = humanize.naturalsize(torch.cuda.max_memory_allocated(device=device))
+    c = humanize.naturalsize(torch.cuda.memory_cached(device=device))
+    cm = humanize.naturalsize(torch.cuda.max_memory_cached(device=device))
+    print(f'allocated: {a} (max: {am}), cached: {c} (max: {cm})')
 
 
 ######### unused #########

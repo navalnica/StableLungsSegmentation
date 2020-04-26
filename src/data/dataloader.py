@@ -16,10 +16,12 @@ class DataLoader:
         self.to_shuffle = to_shuffle
 
     def __str__(self):
-        return (f'to_shuffle: {self.to_shuffle}; '
+        return (f'DataLoader('
+                f'len: {len(self)}; '
+                f'to_shuffle: {self.to_shuffle}; '
                 f'batch_size: {self.batch_size}; '
-                f'orig_img_per_batch: {self.orig_img_per_batch}'
-                f'aug_cnt: {self.aug_cnt}; '
+                f'orig_img_per_batch: {self.orig_img_per_batch}; '
+                f'aug_cnt: {self.aug_cnt})'
                 )
 
     @property

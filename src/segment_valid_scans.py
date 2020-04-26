@@ -4,7 +4,7 @@ import shutil
 import click
 
 import const
-from train_pipeline import TrainPipeline
+from pipeline import Pipeline
 
 
 @click.command()
@@ -31,7 +31,7 @@ def main(launch):
         shutil.rmtree(segmented_masks_dp)
     os.makedirs(segmented_masks_dp, exist_ok=True)
 
-    pipeline = TrainPipeline(dataset_dp=dataset_dp, device=device, n_epochs=8)
+    pipeline = Pipeline(dataset_dp=dataset_dp, device=device, n_epochs=8)
     pipeline.segment_valid_scans(checkpoint_fp, segmented_masks_dp)
 
 
