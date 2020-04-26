@@ -3,6 +3,7 @@ import re
 import sys
 from collections import defaultdict
 from glob import glob
+from typing import List
 
 import matplotlib.pyplot as plt
 import nibabel
@@ -60,14 +61,20 @@ def parse_image_id_from_filepath(fp: str, get_postfix=False):
     return res
 
 
-def get_files_dict(scans_dp, masks_dp, mask_postfixes=('autolungs', 'mask')):
+def get_files_dict(scans_dp, masks_dp, ids: List[str] = None, mask_postfixes=('autolungs', 'mask')):
     """"
     Create dict of the following structure:
     `img_id: {'scan_fp': scan_filepath, 'mask_fp': mask_filepath}`
     and leave only those images that have both scans and masks.
+
     Function uses id and postfix (optionally) parsed from image filepath.
     If `scans_dp == masks_dp` then scan files only with '' postfix are selected
     and mask files only with postfix in `mask_postfixes` are selected.
+
+    :param scans_dp: scans directory path
+    :param masks_dp: masks directory path
+    :param ids: list of ids to consider. if None parse all files
+    :param mask_postfixes: tuple of valid postfixed for mask files
     """
 
     print(const.SEPARATOR)
@@ -84,14 +91,16 @@ def get_files_dict(scans_dp, masks_dp, mask_postfixes=('autolungs', 'mask')):
     scans_fps = get_nii_gz_filepaths(scans_dp)
     for fp in scans_fps:
         img_id, img_postfix = parse_image_id_from_filepath(fp, get_postfix=True)
-        if not same_dirs or not img_postfix:
-            d[img_id].update({'scan_fp': fp})
+        if ids is None or img_id in ids:
+            if not same_dirs or not img_postfix:
+                d[img_id].update({'scan_fp': fp})
 
     masks_fps = get_nii_gz_filepaths(masks_dp)
     for fp in masks_fps:
         img_id, img_postfix = parse_image_id_from_filepath(fp, get_postfix=True)
-        if not same_dirs or img_postfix in mask_postfixes:
-            d[img_id].update({'mask_fp': fp})
+        if ids is None or img_id in ids:
+            if not same_dirs or img_postfix in mask_postfixes:
+                d[img_id].update({'mask_fp': fp})
 
     d_intersection = {k: v for (k, v) in d.items() if 'scan_fp' in v and 'mask_fp' in v}
     scans_wo_masks = [k for (k, v) in d.items() if 'scan_fp' in v and 'mask_fp' not in v]

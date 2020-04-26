@@ -16,7 +16,7 @@ class NiftiDataset(Dataset):
         self._init_slice_info()
 
     def _init_info(self):
-        paths_dict = utils.get_files_dict(self.scans_dp, self.masks_dp)
+        paths_dict = utils.get_files_dict(self.scans_dp, self.masks_dp, ids=self.img_ids)
 
         for cur_id, paths in paths_dict.items():
             if cur_id not in self.img_ids:
