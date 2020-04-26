@@ -1,7 +1,3 @@
-# TODO: пытанні
-#   * што не так са 126 слайсам
-#   * 123, 163, 206 - тэлеграм
-
 import os
 import shutil
 
@@ -13,6 +9,8 @@ import const
 import utils
 from data import preprocessing
 
+
+# TODO: move to `nifti_dataset.py` as a `store_processed_as_numpy_dataset` method
 
 def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nifti=True):
     print(const.SEPARATOR)
@@ -64,17 +62,6 @@ def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nif
 
             # if ix >= 10:
             #     break
-
-
-def some_test():
-    pass
-    # k = '155'
-    # print(const.SEPARATOR)
-    # print(f'test: loading scan {k}')
-    # scan = utils.load_npy(os.path.join(dataset_dp, 'scans', f'{k}.npy')
-    # labels = utils.load_npy(os.path.join(dataset_dp, 'labels', f'{k}.npy')
-    # utils.print_np_stats(scan, 'scan')
-    # utils.print_np_stats(labels, 'labels')
 
 
 @click.command()
