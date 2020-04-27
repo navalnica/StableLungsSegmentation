@@ -1,7 +1,6 @@
 import copy
 import os
 import pickle
-import shutil
 import time
 from typing import List
 
@@ -144,10 +143,12 @@ def train_valid(
     dict with training and validation history of following structure:
     '<metric name>' : {'train': List[float], 'valid': Lists[float]}
     """
-    if os.path.isdir(checkpoints_dp):
-        print(f'checkpoints dir "{checkpoints_dp}" exists. will remove and create new one')
-        shutil.rmtree(checkpoints_dp)
-    os.makedirs(checkpoints_dp, exist_ok=True)
+    print(const.SEPARATOR)
+    print('train_valid():')
+
+    if not os.path.isdir(checkpoints_dp):
+        print(f'\ncheckpoints dir "{checkpoints_dp}" does not exist. will create a new one.')
+        os.makedirs(checkpoints_dp)
 
     history = {utils.get_class_name(m): {'train': [], 'valid': []} for m in metrics}
     loss_name = utils.get_class_name(loss_func)
@@ -161,9 +162,7 @@ def train_valid(
     best_epoch_cnt = -1
     best_net_params = copy.deepcopy(net.state_dict())
 
-    print(const.SEPARATOR)
-    print('start of the training')
-    print(f'train parameters:\n\n'
+    print(f'\ntrain parameters:\n\n'
           f'loss function: {loss_name}\n'
           f'optimizer: {optimizer}\n'
           f'number of epochs: {n_epochs}\n'
