@@ -41,13 +41,13 @@ class Pipeline:
     def __init__(
             self, train_dataset: Dataset, valid_dataset: Dataset,
             loss_func: nn.Module, metrics: List[nn.Module],
-            device: torch.device, sanity_check: bool = False):
+            device: torch.device, max_batches: int = None):
         self.train_dataset = train_dataset
         self.valid_dataset = valid_dataset
         self.loss_func = loss_func
         self.metrics = metrics
         self.device = device
-        self.sanity_check = sanity_check
+        self.max_batches = max_batches
 
         self.results_dp = 'results'
         self.checkpoints_dp = os.path.join(self.results_dp, 'model_checkpoints')
@@ -79,7 +79,7 @@ class Pipeline:
             net=self.net, loss_func=self.loss_func, metrics=self.metrics,
             train_loader=train_loader, valid_loader=valid_loader,
             optimizer=optimizer, device=self.device, n_epochs=n_epochs,
-            checkpoints_dp=self.checkpoints_dp, sanity_check=self.sanity_check
+            checkpoints_dp=self.checkpoints_dp, max_batches=self.max_batches
         )
 
         # store history dict to .pickle file
@@ -200,7 +200,7 @@ def main(launch):
     pipeline = Pipeline(
         train_dataset=train_dataset, valid_dataset=valid_dataset,
         loss_func=loss_func, metrics=metrics,
-        device=device, sanity_check=False
+        device=device
     )
 
     # TODO: add as option
@@ -232,16 +232,18 @@ def sanity_check(launch, device):
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
 
+    split = load_split_from_json(data_paths.get_train_valid_split_fp())
+
     scans_dp = data_paths.scans_dp
     masks_dp = data_paths.masks_dp
-    train_dataset = NiftiDataset(scans_dp, masks_dp, ['id001', 'id002'])
-    valid_dataset = NiftiDataset(scans_dp, masks_dp, ['id003'])
+    train_dataset = NiftiDataset(scans_dp, masks_dp, split['train'])
+    valid_dataset = NiftiDataset(scans_dp, masks_dp, split['valid'])
     device_t = torch.device(device)
 
     pipeline = Pipeline(
         train_dataset=train_dataset, valid_dataset=valid_dataset,
         loss_func=loss_func, metrics=metrics,
-        device=device_t, sanity_check=True
+        device=device_t, max_batches=10
     )
 
     pipeline.train(n_epochs=50, train_orig_img_per_batch=4, train_aug_cnt=0, valid_batch_size=4)

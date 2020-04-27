@@ -3,7 +3,7 @@ import os
 SEPARATOR = f'\n{"=" * 20}'
 
 _ROOT_DATA_DP_LOCAL = '/media/rtn/storage/datasets/lungs/data'
-_ROOT_DATA_DP_SERVER = '/media/data10T_1/datasets/CRDF_5_tmp/dataset'
+_ROOT_DATA_DP_SERVER = '/media/data10T_1/datasets/CRDF_5_tmp/model_dataset'
 
 # changing groups order might change `utils.parse_image_id_from_filepath` function
 IMAGE_FP_RE_PATTERN = r'(.*\/?)(id[\d]+)_*([^\/]*?)\.(npy|nii\.gz)'
@@ -74,7 +74,7 @@ class DataPaths:
 
     @property
     def masks_raw_dp(self):
-        return os.path.join(self._root_data_dp, 'original', 'masks_raw')
+        return os.path.join(self._root_data_dp, 'original', 'masks_orientation_fixed_not_binary')
 
     def get_train_valid_split_fp(self, is_random_split=False):
         split_fn = 'train_valid_split.json' if not is_random_split else 'train_valid_split_random.json'

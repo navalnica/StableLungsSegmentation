@@ -88,8 +88,11 @@ def loss_epoch(
         net: UNet, dataloader: DataLoader,
         loss_func: nn.Module, metrics: List[nn.Module],
         device: torch.device, optimizer=None,
-        tqdm_description: str = None, sanity_check: bool = False
+        tqdm_description: str = None, max_batches: int = None
 ) -> dict:
+    """
+    :param max_batches: max number of batches to process. use to perform sanity check
+    """
     # create `epoch_stats` dict
     epoch_stats = {utils.get_class_name(metric): 0 for metric in metrics}
     # generate field to store loss in case it's not present in `metrics` list
@@ -119,7 +122,7 @@ def loss_epoch(
 
             pbar_t.update(batch_size)
 
-            if sanity_check:
+            if max_batches is not None and batch_ix >= max_batches:
                 break
 
     # average stats
@@ -132,10 +135,10 @@ def train_valid(
         net: UNet, loss_func: nn.Module, metrics: List[nn.Module],
         train_loader: DataLoader, valid_loader: DataLoader,
         optimizer: optim.SGD, device: torch.device, n_epochs: int,
-        checkpoints_dp: str, sanity_check: bool = False
+        checkpoints_dp: str, max_batches: int = None
 ) -> dict:
     """
-    :param sanity_check: whether to stop epoch after first batch
+    :param max_batches: max number of batches to process on each epoch. use to perform sanity check
     Returns
     -------
     dict with training and validation history of following structure:
@@ -165,7 +168,8 @@ def train_valid(
           f'optimizer: {optimizer}\n'
           f'number of epochs: {n_epochs}\n'
           f'device: {device}\n'
-          f'checkpoints dir: {os.path.abspath(checkpoints_dp)}'
+          f'checkpoints dir: {os.path.abspath(checkpoints_dp)}\n'
+          f'max_batches: {max_batches}'
           )
     print(f'\ntrain_loader:\n{train_loader}')
     print(f'\nvalid_loader:\n{valid_loader}')
@@ -185,7 +189,7 @@ def train_valid(
             net=net, dataloader=train_loader,
             loss_func=loss_func, metrics=metrics,
             device=device, optimizer=optimizer,
-            tqdm_description=tqdm_description, sanity_check=sanity_check
+            tqdm_description=tqdm_description, max_batches=max_batches
         )
 
         for m_name, val in epoch_stats_train.items():
@@ -204,7 +208,7 @@ def train_valid(
                 net=net, dataloader=valid_loader,
                 loss_func=loss_func, metrics=metrics,
                 device=device, optimizer=None,  # provide no optimizer to avoid backpropagation
-                tqdm_description=tqdm_description, sanity_check=sanity_check
+                tqdm_description=tqdm_description, max_batches=max_batches
             )
 
         for m_name, val in epoch_stats_valid.items():
@@ -223,14 +227,14 @@ def train_valid(
         tqdm.tqdm.write(f'time elapsed for epoch: '
                         f'{utils.get_elapsed_time_str(time_start_epoch)}')
 
+        # store parameters
+        torch.save(
+            net.state_dict(),
+            os.path.join(checkpoints_dp, f'cp_{loss_name}_epoch_{cur_epoch}.pth')
+        )
+
         # ----------- early stopping ----------- #
         if history[loss_name]['valid'][-1] < best_loss_valid - es_tolerance:
-            # store parameters
-            torch.save(
-                net.state_dict(),
-                os.path.join(checkpoints_dp, f'cp_{loss_name}_epoch_{cur_epoch}.pth')
-            )
-
             best_loss_valid = history[loss_name]['valid'][-1]
             tqdm.tqdm.write(f'epoch {cur_epoch}: new best loss valid: {best_loss_valid : .4f}')
             best_net_params = copy.deepcopy(net.state_dict())
