@@ -216,7 +216,12 @@ def main(launch):
     utils.print_cuda_memory_stats(device)
 
 
-def sanity_check():
+@click.command()
+@click.option('--launch', help='launch location',
+              type=click.Choice(['local', 'server']), default='local')
+@click.option('--device', help='device to use',
+              type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0')
+def sanity_check(launch, device):
     loss_func = METRICS_DICT['NegDiceLoss']
     metrics = [
         METRICS_DICT['BCELoss'],
@@ -224,19 +229,19 @@ def sanity_check():
         METRICS_DICT['FocalLoss']
     ]
 
-    device = torch.device('cpu')
-    # device = torch.device('cuda:0')
-
+    const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
+
     scans_dp = data_paths.scans_dp
     masks_dp = data_paths.masks_dp
     train_dataset = NiftiDataset(scans_dp, masks_dp, ['id001', 'id002'])
     valid_dataset = NiftiDataset(scans_dp, masks_dp, ['id003'])
+    device_t = torch.device(device)
 
     pipeline = Pipeline(
         train_dataset=train_dataset, valid_dataset=valid_dataset,
         loss_func=loss_func, metrics=metrics,
-        device=device, sanity_check=True
+        device=device_t, sanity_check=True
     )
 
     pipeline.train(n_epochs=50, train_orig_img_per_batch=4, train_aug_cnt=0, valid_batch_size=4)

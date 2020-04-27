@@ -3,7 +3,7 @@ import os
 SEPARATOR = f'\n{"=" * 20}'
 
 _ROOT_DATA_DP_LOCAL = '/media/rtn/storage/datasets/lungs/data'
-_ROOT_DATA_DP_SERVER = '/media/data10T_1/datasets/CRDF_5_tmp/data'
+_ROOT_DATA_DP_SERVER = '/media/data10T_1/datasets/CRDF_5_tmp/dataset'
 
 # changing groups order might change `utils.parse_image_id_from_filepath` function
 IMAGE_FP_RE_PATTERN = r'(.*\/?)(id[\d]+)_*([^\/]*?)\.(npy|nii\.gz)'

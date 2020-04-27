@@ -87,6 +87,8 @@ def get_files_dict(scans_dp, masks_dp, ids: List[str] = None, mask_postfixes=('a
 
     print(const.SEPARATOR)
     print('get_files_dict()')
+    print(f'scans_dp: {scans_dp}')
+    print(f'masks_dp: {masks_dp}')
 
     d = defaultdict(dict)
     same_dirs = (scans_dp == masks_dp)
