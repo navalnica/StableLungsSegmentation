@@ -5,7 +5,6 @@ import os
 import pickle
 from typing import List
 
-import click
 import tqdm
 from matplotlib import pyplot as plt
 from torch import optim
@@ -16,8 +15,6 @@ import const
 import model.utils as mu
 import utils
 from data.dataloader import DataLoader
-from data.datasets import NumpyDataset, NiftiDataset
-from data.train_valid_split import load_split_from_json
 from model import UNet
 from model.losses import *
 
@@ -38,19 +35,11 @@ METRICS_DICT = {
 class Pipeline:
     net = None
 
-    def __init__(
-            self, train_dataset: Dataset, valid_dataset: Dataset,
-            loss_func: nn.Module, metrics: List[nn.Module],
-            device: torch.device, max_batches: int = None):
-        self.train_dataset = train_dataset
-        self.valid_dataset = valid_dataset
-        self.loss_func = loss_func
-        self.metrics = metrics
+    def __init__(self, device: torch.device):
         self.device = device
-        self.max_batches = max_batches
-
         self.results_dp = 'results'
         self.checkpoints_dp = os.path.join(self.results_dp, 'model_checkpoints')
+        self.segmented_dp = os.path.join(self.results_dp, 'segmented')
 
     def create_net(self):
         self.net = UNet(n_channels=1, n_classes=1)
@@ -58,8 +47,10 @@ class Pipeline:
         return self.net
 
     def train(
-            self, n_epochs: int, train_orig_img_per_batch: int,
-            train_aug_cnt: int, valid_batch_size: int
+            self, train_dataset: Dataset, valid_dataset: Dataset,
+            n_epochs: int, loss_func: nn.Module, metrics: List[nn.Module],
+            train_orig_img_per_batch: int, train_aug_cnt: int, valid_batch_size: int,
+            max_batches: int = None
     ):
         os.makedirs(self.results_dp, exist_ok=True)
         os.makedirs(self.checkpoints_dp, exist_ok=True)
@@ -67,19 +58,19 @@ class Pipeline:
         self.create_net()
         optimizer = optim.SGD(self.net.parameters(), lr=0.001, momentum=0.9)
         train_loader = DataLoader(
-            self.train_dataset, orig_img_per_batch=train_orig_img_per_batch,
+            train_dataset, orig_img_per_batch=train_orig_img_per_batch,
             aug_cnt=train_aug_cnt, to_shuffle=True
         )
         valid_loader = DataLoader(
-            self.valid_dataset, orig_img_per_batch=valid_batch_size,
+            valid_dataset, orig_img_per_batch=valid_batch_size,
             aug_cnt=0, to_shuffle=False
         )
 
         history = mu.train_valid(
-            net=self.net, loss_func=self.loss_func, metrics=self.metrics,
+            net=self.net, loss_func=loss_func, metrics=metrics,
             train_loader=train_loader, valid_loader=valid_loader,
             optimizer=optimizer, device=self.device, n_epochs=n_epochs,
-            checkpoints_dp=self.checkpoints_dp, max_batches=self.max_batches
+            checkpoints_dp=self.checkpoints_dp, max_batches=max_batches
         )
 
         # store history dict to .pickle file
@@ -94,7 +85,7 @@ class Pipeline:
 
     def load_net_from_weights(self, checkpoint_fp: str):
         """load model parameters from checkpoint .pth file"""
-        print(const.SEPARATOR)
+        print(f'\nload_net_from_weights()')
         print(f'loading model parameters from "{checkpoint_fp}"')
 
         self.create_net()
@@ -122,134 +113,51 @@ class Pipeline:
     #     mu.build_hd_boxplot(hd_avg_list, True, loss_name)
     #     mu.visualize_worst_best(self.net, hd_avg, True, self.scans_dp, self.masks_dp, self.device, loss_name)
 
-    def segment_nifti_scans(self, checkpoint_fp: str, filepaths: List[str], out_dp):
+    def segment_scans(
+            self, checkpoint_fp: str, scans_dp: str,
+            ids_list: List[str] = None, output_dp: str = None, postfix: str = None
+    ):
+        """
+        :param checkpoint_fp:   path to .pth file with net's params dict
+        :param scans_dp:    path directory with .nii.gz scans.
+                            will check that scans do not have any postfixes in their filenames.
+        :param ids_list:    list of image ids to consider. if None segment all scans under `scans_dp`
+        :param output_dp:   path to directory to store results of segmentation
+        :param postfix:     postfix of segmented filenames
+        """
         print(const.SEPARATOR)
-        print('segment_scans()')
+        print('Pipeline.segment_scans()')
+
+        output_dp = output_dp or self.segmented_dp
+        print(f'will store segmented masks under "{output_dp}"')
+        os.makedirs(output_dp, exist_ok=True)
+
+        postfix = postfix or 'autolungs'
+        print(f'postfix: {postfix}')
 
         self.load_net_from_weights(checkpoint_fp)
+        scans_fps = utils.get_nii_gz_filepaths(scans_dp)
+        print(f'# of .nii.gz files under "{scans_dp}": {len(scans_fps)}')
 
-        with tqdm.tqdm(total=len(filepaths)) as pbar:
-            for fp in filepaths:
-                pbar.set_description(os.path.basename(fp))
+        # filter filepaths to scans
+        scans_fps_filtered = []
+        for fp in scans_fps:
+            img_id, img_postfix = utils.parse_image_id_from_filepath(fp, get_postfix=True)
+            if img_postfix != '' or ids_list is not None and img_id not in ids_list:
+                continue
+            scans_fps_filtered.append(fp)
+        print(f'# of scans left after filtering: {len(scans_fps_filtered)}')
+
+        with tqdm.tqdm(total=len(scans_fps_filtered)) as pbar:
+            for fp in scans_fps_filtered:
+                cur_id = utils.parse_image_id_from_filepath(fp)
+                pbar.set_description(cur_id)
 
                 scan_nifti, scan_data = utils.load_nifti(fp)
                 segmented_data = mu.segment_single_scan(scan_data, self.net, self.device)
-                segmented_nifti = utils.create_nifti_image_from_mask_data(segmented_data, scan_nifti)
+                segmented_nifti = utils.change_nifti_data(segmented_data, scan_nifti, is_scan=False)
 
-                scan_id = utils.parse_image_id_from_filepath(fp)
-                out_fp = os.path.join(out_dp, f'{scan_id}_autolungs.nii.gz')
+                out_fp = os.path.join(output_dp, f'{cur_id}_{postfix}.nii.gz')
                 utils.store_nifti_to_file(segmented_nifti, out_fp)
 
                 pbar.update()
-
-    def segment_valid_scans(self, checkpoint_fp, segmented_masks_dp):
-        """
-        # TODO: fix method
-        """
-        print(const.SEPARATOR)
-        print('segment_valid_scans()')
-
-        self.load_net_from_weights(checkpoint_fp)
-        fns_valid = load_split_from_json(self.dataset_dp)['valid']
-
-        scans_dp = const.get_numpy_scans_dp(self.dataset_dp)
-        nifti_dp = const.get_nifti_dp(self.dataset_dp)
-
-        with tqdm.tqdm(total=len(fns_valid)) as pbar:
-            for fn in fns_valid:
-                pbar.set_description(fn)
-
-                scan = utils.load_npy(os.path.join(scans_dp, fn))
-                segmented = mu.segment_single_scan(scan, self.net, self.device)
-
-                # load corresponding nifti image to extract header and store `out_combined` data as nifti
-                img_id = utils.parse_image_id_from_filepath(fn)
-                nifti_fp = os.path.join(nifti_dp, f'{img_id}_autolungs.nii.gz')
-                nifti, _ = utils.load_nifti(nifti_fp)
-                segmented_nifti = utils.change_nifti_data(segmented, nifti, is_scan=False)
-
-                out_fp = os.path.join(segmented_masks_dp, f'{img_id}_autolungs.nii.gz')
-                utils.store_nifti_to_file(segmented_nifti, out_fp)
-
-                pbar.update()
-
-
-@click.command()
-@click.option('--launch', help='launch location',
-              type=click.Choice(['local', 'server']), default='local')
-def main(launch):
-    print(const.SEPARATOR)
-    print('train_pipeline()')
-
-    loss_func = METRICS_DICT['NegDiceLoss']
-    metrics = [
-        METRICS_DICT['BCELoss'],
-        METRICS_DICT['NegDiceLoss'],
-        METRICS_DICT['FocalLoss']
-    ]
-
-    const.set_launch_type_env_var(launch == 'local')
-    data_paths = const.DataPaths()
-    dataset_dp = data_paths.get_processed_dataset_dp(zoom_factor=0.25, mark_as_new=False)
-
-    device = torch.device('cuda:0')
-    split = load_split_from_json(data_paths.get_train_valid_split_fp())
-
-    train_dataset = NumpyDataset(dataset_dp, split['train'])
-    valid_dataset = NumpyDataset(dataset_dp, split['valid'])
-    pipeline = Pipeline(
-        train_dataset=train_dataset, valid_dataset=valid_dataset,
-        loss_func=loss_func, metrics=metrics,
-        device=device
-    )
-
-    # TODO: add as option
-    to_train = True
-
-    if to_train:
-        pipeline.train(n_epochs=8, train_orig_img_per_batch=4, train_aug_cnt=0, valid_batch_size=4)
-    else:
-        checkpoint_fp = f'results/model_checkpoints/cp_NegDiceLoss_best.pth'
-        pipeline.load_net_from_weights(checkpoint_fp)
-
-    # pipeline.evaluate_model()
-    utils.print_cuda_memory_stats(device)
-
-
-@click.command()
-@click.option('--launch', help='launch location',
-              type=click.Choice(['local', 'server']), default='local')
-@click.option('--device', help='device to use',
-              type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0')
-def sanity_check(launch, device):
-    loss_func = METRICS_DICT['NegDiceLoss']
-    metrics = [
-        METRICS_DICT['BCELoss'],
-        METRICS_DICT['NegDiceLoss'],
-        METRICS_DICT['FocalLoss']
-    ]
-
-    const.set_launch_type_env_var(launch == 'local')
-    data_paths = const.DataPaths()
-
-    split = load_split_from_json(data_paths.get_train_valid_split_fp())
-
-    scans_dp = data_paths.scans_dp
-    masks_dp = data_paths.masks_dp
-    train_dataset = NiftiDataset(scans_dp, masks_dp, split['train'])
-    valid_dataset = NiftiDataset(scans_dp, masks_dp, split['valid'])
-    device_t = torch.device(device)
-
-    pipeline = Pipeline(
-        train_dataset=train_dataset, valid_dataset=valid_dataset,
-        loss_func=loss_func, metrics=metrics,
-        device=device_t, max_batches=10
-    )
-
-    pipeline.train(n_epochs=50, train_orig_img_per_batch=4, train_aug_cnt=0, valid_batch_size=4)
-    utils.print_cuda_memory_stats(device)
-
-
-if __name__ == '__main__':
-    sanity_check()
-    # main()

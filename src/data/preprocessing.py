@@ -22,9 +22,9 @@ def fix_resegm_masks(resegm_filenames, fixed_dp):
 
     pat = r'([^/]+)(.nii.gz)$'
     for fn in tqdm.tqdm(resegm_filenames.values()):
-        nii = nibabel.load(fn)
-        new_affine = utils.diagonal_abs(nii.affine)
-        new_data = np.flip(nii.get_data(), axis=0)
+        img, img_data = utils.load_nifti(fn, load_data=False)
+        new_affine = utils.diagonal_abs(img.affine)
+        new_data = np.flip(img_data, axis=0)
         new_nii = nibabel.Nifti1Image(new_data, new_affine)
         new_fp = os.path.join(fixed_dp, '_fixed'.join(re.search(pat, fn).groups()))
         new_nii.to_filename(new_fp)

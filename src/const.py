@@ -23,8 +23,8 @@ ENV_IS_SERVER_LAUNCH = 'IS_SERVER_LAUNCH'
 
 def set_launch_type_env_var(is_local_launch: bool):
     os.environ[ENV_IS_SERVER_LAUNCH] = '0' if is_local_launch else '1'
-    print(SEPARATOR)
-    print(f'set_launch_type_env_var(): {ENV_IS_SERVER_LAUNCH}: {os.environ[ENV_IS_SERVER_LAUNCH]}')
+    print(f'\nset_launch_type_env_var()')
+    print(f'{ENV_IS_SERVER_LAUNCH}: {os.environ[ENV_IS_SERVER_LAUNCH]}')
 
 
 def get_shapes_fp(dataset_dp):

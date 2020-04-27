@@ -12,8 +12,6 @@ import matplotlib.pyplot as plt
 import nibabel
 import numpy as np
 import torch
-import tqdm
-from tabulate import tabulate
 
 import const
 
@@ -36,10 +34,14 @@ def get_npy_filepaths(dp: str):
 def load_nifti(fp: str, load_data=True):
     """
     Read Nifti image and return Nifti1Image together with numpy data array.
-    # TODO: use this function instead of nibabel.load(<filepath>).get_data()
-        everywhere in the code due to nibabel's deprecation behavior.
+    Additionally check slope & intercept to be == (1, 0).
     """
     image = nibabel.load(fp)
+
+    # # TODO: check slope & intercept
+    # img_slope, img_inter = img.dataobj.slope, img.dataobj.inter
+    # assert (img_slope, img_inter) == (1, 0)
+
     data = None if not load_data else np.asanyarray(image.dataobj)
     return image, data
 
@@ -48,9 +50,9 @@ def load_nifti_slice(fp: str, ix: int):
     """
     Load single slice from Nifti image along z-axis
     """
-    image = nibabel.load(fp)
-    slice = image.dataobj[:, :, ix]
-    return slice
+    img, _ = load_nifti(fp, load_data=False)
+    img_slice = img.dataobj[:, :, ix]
+    return img_slice
 
 
 def load_npy(fp: str):
@@ -125,21 +127,25 @@ def get_files_dict(scans_dp, masks_dp, ids: List[str] = None, mask_postfixes=('a
     return d_intersection
 
 
+def store_nifti_to_file(image: nibabel.Nifti1Image, fp: str):
+    image.to_filename(fp)
+
+
 def change_nifti_data(
         data_new: np.ndarray, nifti_original: nibabel.Nifti1Image, is_scan: bool
 ):
     """
-    Create new Nifti1Image based on new data array and previous header.
+    Create new Nifti1Image from `data_new` array and header extracted from `nifti_original`.
 
-    :param data_new: new data array
-    :param nifti_original: previous scan or mask as Nifti1Image
-    :param is_scan: True indicates that scan data is passed, False - mask data
-    it helps to determine the right dtype to open scans or masks later with LesionLabeller
+    :param data_new:        new data array
+    :param nifti_original:  previous scan or mask as Nifti1Image
+    :param is_scan: if True treat `data_new` as a scan.
+                    if False - as a mask data. it's needed to check dtype
     """
     if is_scan:
-        data_new = data_new.astype(np.int16)
+        assert data_new.dtype == np.int16
     else:
-        data_new = data_new.astype(np.uint8)
+        assert data_new.dtype == np.uint8
 
     header_new = nifti_original.header.copy()
     header_new.set_data_shape(data_new.shape)
@@ -147,28 +153,6 @@ def change_nifti_data(
 
     nifti_new = nibabel.Nifti1Image(data_new, affine=nifti_original.affine, header=header_new)
     return nifti_new
-
-
-def store_nifti_to_file(image: nibabel.Nifti1Image, fp: str):
-    image.to_filename(fp)
-
-
-def create_nifti_image_from_mask_data(mask_data: np.ndarray, scan_nifti: nibabel.Nifti1Image):
-    """
-    create Nifti1Image for uint8 mask created for specified scan
-    :param mask_data: np.ndarray with mask
-    :param scan_nifti: nifti scan for which mask was created. used to extract affine matrix and slope & intercept
-    """
-    mask_nifti = nibabel.Nifti1Image(mask_data, scan_nifti.affine)
-    assert mask_data.dtype == np.uint8
-    assert mask_nifti.get_data_dtype() == np.uint8
-
-    # set slope & intercept
-    slope, inter = scan_nifti.dataobj.slope, scan_nifti.dataobj.inter
-    assert (slope, inter) == (1, 0)
-    mask_nifti.header.set_slope_inter(slope, inter)
-
-    return mask_nifti
 
 
 def get_elapsed_time_str(time_start_seconds: float):
@@ -276,75 +260,10 @@ def get_single_image_slice_gen(data: np.ndarray, batch_size=4):
 
 
 def print_cuda_memory_stats(device):
-    print(const.SEPARATOR)
-    print('cuda memory stats:')
+    print('\nprint_cuda_memory_stats()')
 
     a = humanize.naturalsize(torch.cuda.memory_allocated(device=device))
     am = humanize.naturalsize(torch.cuda.max_memory_allocated(device=device))
     c = humanize.naturalsize(torch.cuda.memory_cached(device=device))
     cm = humanize.naturalsize(torch.cuda.max_memory_cached(device=device))
     print(f'allocated: {a} (max: {am}), cached: {c} (max: {cm})')
-
-
-######### unused #########
-
-def compare_pair(pair):
-    initial = nibabel.load(pair['initial'])
-    resegm = nibabel.load(pair['resegm'])
-    transformed = np.flip(resegm.get_data(), axis=0)
-
-    print(affine_tables_to_str([initial, resegm]))
-
-    slices = [get_mid_slice(x, a) for a in [2, 1] for x in [initial.dataobj, resegm.dataobj, transformed]]
-    titles = [x for x in ['initial', 'resegm', 'transformed']]
-    titles.extend(titles)
-    show_slices(slices, titles, cols=3)
-
-
-def vec2str(vec):
-    return ('{:+9.3f}' * len(vec)).format(*vec)
-
-
-def affine_tables_to_str(nibabel_images):
-    headers = [os.path.basename(x.get_filename()) for x in nibabel_images]
-    table = [[vec2str(x.affine[i]) for x in nibabel_images] for i in range(4)]
-    return tabulate(table, headers=headers, tablefmt='pipe', stralign='center')
-
-
-def get_unique_signs_for_diag_elements(nibabel_fps):
-    diag_initial = []
-    for fn in tqdm.tqdm(nibabel_fps):
-        nii = nibabel.load(fn)
-        diag_initial.append(np.sign(np.diag(nii.affine)))
-    unique = np.unique(diag_initial, axis=0)
-    return unique
-
-
-def get_lower_intensities(img_dicts_list, img_type):
-    if not img_type in ['initial', 'fixed']:
-        raise ValueError("img_type must be in ['initial', 'fixed']")
-    lower_intensities = []
-    with tqdm.tqdm(total=len(img_dicts_list)) as pbar:
-        for k, v in img_dicts_list.items():
-            img = nibabel.load(v[img_type])
-            m = sorted(np.unique(img.get_data()))
-            lower_intensities.append({k: m})
-            pbar.update()
-    return lower_intensities
-
-
-def show_pixel_intensities_hist(img_dicts_list, img_ids, columns=4, width=5, height=4):
-    rows = len(img_ids) // columns + (1 if len(img_ids) % columns > 0 else 0)
-    fig, ax = plt.subplots(rows, columns, figsize=(width * columns, height * rows), squeeze=False)
-    ax_flatten = ax.flatten()
-    with tqdm.tqdm(total=len(img_ids)) as pbar:
-        for i in range(len(img_ids)):
-            img = nibabel.load(img_dicts_list[img_ids[i]]['initial'])
-            ax_flatten[i].hist(img.get_data().flatten())
-            ax_flatten[i].set_title(img_ids[i])
-            pbar.update()
-    for i in range(len(img_ids), len(ax_flatten)):
-        ax_flatten[i].set_visible(False)
-    fig.tight_layout()
-    fig.subplots_adjust(top=0.9)
-    return fig, ax
