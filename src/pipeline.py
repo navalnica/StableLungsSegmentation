@@ -41,13 +41,12 @@ class Pipeline:
     def __init__(
             self, train_dataset: Dataset, valid_dataset: Dataset,
             loss_func: nn.Module, metrics: List[nn.Module],
-            device: torch.device, n_epochs: int, sanity_check: bool = False):
+            device: torch.device, sanity_check: bool = False):
         self.train_dataset = train_dataset
         self.valid_dataset = valid_dataset
         self.loss_func = loss_func
         self.metrics = metrics
         self.device = device
-        self.n_epochs = n_epochs
         self.sanity_check = sanity_check
 
         self.results_dp = 'results'
@@ -58,19 +57,28 @@ class Pipeline:
         self.net.to(device=self.device)
         return self.net
 
-    def train(self):
+    def train(
+            self, n_epochs: int, train_orig_img_per_batch: int,
+            train_aug_cnt: int, valid_batch_size: int
+    ):
         os.makedirs(self.results_dp, exist_ok=True)
         os.makedirs(self.checkpoints_dp, exist_ok=True)
 
         self.create_net()
         optimizer = optim.SGD(self.net.parameters(), lr=0.001, momentum=0.9)
-        train_loader = DataLoader(self.train_dataset, orig_img_per_batch=4, aug_cnt=0, to_shuffle=True)
-        valid_loader = DataLoader(self.valid_dataset, orig_img_per_batch=4, aug_cnt=0, to_shuffle=False)
+        train_loader = DataLoader(
+            self.train_dataset, orig_img_per_batch=train_orig_img_per_batch,
+            aug_cnt=train_aug_cnt, to_shuffle=True
+        )
+        valid_loader = DataLoader(
+            self.valid_dataset, orig_img_per_batch=valid_batch_size,
+            aug_cnt=0, to_shuffle=False
+        )
 
         history = mu.train_valid(
             net=self.net, loss_func=self.loss_func, metrics=self.metrics,
             train_loader=train_loader, valid_loader=valid_loader,
-            optimizer=optimizer, device=self.device, n_epochs=self.n_epochs,
+            optimizer=optimizer, device=self.device, n_epochs=n_epochs,
             checkpoints_dp=self.checkpoints_dp, sanity_check=self.sanity_check
         )
 
@@ -192,20 +200,19 @@ def main(launch):
     pipeline = Pipeline(
         train_dataset=train_dataset, valid_dataset=valid_dataset,
         loss_func=loss_func, metrics=metrics,
-        device=device, n_epochs=8, sanity_check=False
+        device=device, sanity_check=False
     )
 
     # TODO: add as option
     to_train = True
 
     if to_train:
-        pipeline.train()
+        pipeline.train(n_epochs=8, train_orig_img_per_batch=4, train_aug_cnt=0, valid_batch_size=4)
     else:
         checkpoint_fp = f'results/model_checkpoints/cp_NegDiceLoss_best.pth'
         pipeline.load_net_from_weights(checkpoint_fp)
 
     # pipeline.evaluate_model()
-
     utils.print_cuda_memory_stats(device)
 
 
@@ -217,20 +224,22 @@ def sanity_check():
         METRICS_DICT['FocalLoss']
     ]
 
-    device = torch.device('cuda:0')
+    device = torch.device('cpu')
+    # device = torch.device('cuda:0')
 
-    scans_dp = 'data/scans/'
-    masks_dp = 'data/masks/'
+    data_paths = const.DataPaths()
+    scans_dp = data_paths.scans_dp
+    masks_dp = data_paths.masks_dp
     train_dataset = NiftiDataset(scans_dp, masks_dp, ['id001', 'id002'])
     valid_dataset = NiftiDataset(scans_dp, masks_dp, ['id003'])
 
     pipeline = Pipeline(
         train_dataset=train_dataset, valid_dataset=valid_dataset,
         loss_func=loss_func, metrics=metrics,
-        device=device, n_epochs=50, sanity_check=True
+        device=device, sanity_check=True
     )
 
-    pipeline.train()
+    pipeline.train(n_epochs=50, train_orig_img_per_batch=4, train_aug_cnt=0, valid_batch_size=4)
     utils.print_cuda_memory_stats(device)
 
 

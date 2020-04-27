@@ -90,8 +90,12 @@ def loss_epoch(
         device: torch.device, optimizer=None,
         tqdm_description: str = None, sanity_check: bool = False
 ) -> dict:
-    n_samples = len(dataloader)
+    # create `epoch_stats` dict
     epoch_stats = {utils.get_class_name(metric): 0 for metric in metrics}
+    # generate field to store loss in case it's not present in `metrics` list
+    epoch_stats[utils.get_class_name(loss_func)] = 0
+
+    n_samples = len(dataloader)
     gen = dataloader.get_generator()
 
     with tqdm.tqdm(total=n_samples, desc=tqdm_description,
@@ -151,7 +155,7 @@ def train_valid(
     es_patience = 10
 
     best_loss_valid = float('inf')
-    best_epoch_ix = -1
+    best_epoch_cnt = -1
     best_net_params = copy.deepcopy(net.state_dict())
 
     print(const.SEPARATOR)
@@ -167,47 +171,57 @@ def train_valid(
     print(f'\nvalid_loader:\n{valid_loader}')
 
     # count global time of training
-    train_time_start = time.time()
+    time_start_train_valid = time.time()
 
     for cur_epoch in range(1, n_epochs + 1):
         print(f'\n{"=" * 15} epoch {cur_epoch}/{n_epochs} {"=" * 15}')
-        epoch_time_start = time.time()
+        time_start_epoch = time.time()
 
-        # ----------- train ----------- #
+        # ----------- training ----------- #
         net.train()
-        tqdm_description = f'epoch {cur_epoch}. train'
+        tqdm_description = f'epoch {cur_epoch}. training'
 
         epoch_stats_train = loss_epoch(
-            net, train_loader, loss_func, metrics,
+            net=net, dataloader=train_loader,
+            loss_func=loss_func, metrics=metrics,
             device=device, optimizer=optimizer,
             tqdm_description=tqdm_description, sanity_check=sanity_check
         )
 
         for m_name, val in epoch_stats_train.items():
-            tqdm.tqdm.write(f'{m_name} train: {val : .4f}')
+            tqdm.tqdm.write(f'training.\t{m_name}:\t{val : .4f}')
+        tqdm.tqdm.write(f'time elapsed for training: '
+                        f'{utils.get_elapsed_time_str(time_start_epoch)}')
 
         # ----------- validation ----------- #
+        time_start_epoch_valid = time.time()
         net.eval()
         tqdm_description = f'epoch {cur_epoch}. validation'
 
+        tqdm.tqdm.write('')
         with torch.no_grad():
             epoch_stats_valid = loss_epoch(
-                net, valid_loader, loss_func, metrics,
-                device=device, optimizer=None,
+                net=net, dataloader=valid_loader,
+                loss_func=loss_func, metrics=metrics,
+                device=device, optimizer=None,  # provide no optimizer to avoid backpropagation
                 tqdm_description=tqdm_description, sanity_check=sanity_check
             )
 
         for m_name, val in epoch_stats_valid.items():
-            tqdm.tqdm.write(f'{m_name} train: {val : .4f}')
+            tqdm.tqdm.write(f'validation.\t{m_name}:\t{val : .4f}')
+        tqdm.tqdm.write(f'time elapsed for validation: '
+                        f'{utils.get_elapsed_time_str(time_start_epoch_valid)}')
 
+        # ----------- end of epoch ----------- #
         # append epoch stats to history
         for k in epoch_stats_train.keys() & epoch_stats_valid.keys():
             history[k]['train'].append(epoch_stats_train[k])
             history[k]['valid'].append(epoch_stats_valid[k])
 
-        # ----------- print elapsed time for epoch ----------- #
-        epoch_td = utils.seconds_to_str(time.time() - epoch_time_start)
-        tqdm.tqdm.write(f'time elapsed for epoch: {epoch_td}')
+        # print elapsed time for epoch
+        tqdm.tqdm.write('')
+        tqdm.tqdm.write(f'time elapsed for epoch: '
+                        f'{utils.get_elapsed_time_str(time_start_epoch)}')
 
         # ----------- early stopping ----------- #
         if history[loss_name]['valid'][-1] < best_loss_valid - es_tolerance:
@@ -220,7 +234,7 @@ def train_valid(
             best_loss_valid = history[loss_name]['valid'][-1]
             tqdm.tqdm.write(f'epoch {cur_epoch}: new best loss valid: {best_loss_valid : .4f}')
             best_net_params = copy.deepcopy(net.state_dict())
-            best_epoch_ix = cur_epoch
+            best_epoch_cnt = cur_epoch
             es_cnt = 0
         else:
             es_cnt += 1
@@ -230,11 +244,14 @@ def train_valid(
             tqdm.tqdm.write(f'Early Stopping! no improvements for {es_patience} epochs for {loss_name} metric')
             break
 
+    # ----------- end of training ----------- #
     # modify history dict
-    history = {'metrics': history}
-    history['loss_name'] = loss_name
-    history['best_loss_valid'] = best_loss_valid
-    history['best_epoch_ix'] = best_epoch_ix
+    history = {
+        'metrics': history,
+        'loss_name': loss_name,
+        'best_loss_valid': best_loss_valid,
+        'best_epoch_cnt': best_epoch_cnt
+    }
 
     # save best weights once again
     torch.save(
@@ -248,10 +265,11 @@ def train_valid(
 
     # print summary
     print(const.SEPARATOR)
-    train_td = utils.seconds_to_str(time.time() - train_time_start)
-    print(f'time elapsed for training: {train_td}')
+    print('end of training.')
+    tqdm.tqdm.write(f'total time elapsed: '
+                    f'{utils.get_elapsed_time_str(time_start_train_valid)}')
     print(f'best loss valid: {best_loss_valid : .4f}')
-    print(f'best epoch: {best_epoch_ix}')
+    print(f'best epoch: {best_epoch_cnt}')
 
     return history
 

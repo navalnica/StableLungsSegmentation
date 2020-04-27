@@ -2,6 +2,7 @@ import datetime
 import os
 import re
 import sys
+import time
 from collections import defaultdict
 from glob import glob
 from typing import List
@@ -113,7 +114,7 @@ def get_files_dict(scans_dp, masks_dp, ids: List[str] = None, mask_postfixes=('a
     scans_wo_masks = [k for (k, v) in d.items() if 'scan_fp' in v and 'mask_fp' not in v]
     masks_wo_scans = [k for (k, v) in d.items() if 'scan_fp' not in v and 'mask_fp' in v]
 
-    print(f'# of scans found: {len(scans_fps)}')
+    print(f'\n# of scans found: {len(scans_fps)}')
     print(f'# of masks found: {len(masks_fps)}')
     print(f'# of images with scans and masks: {len(d_intersection)}')
     print(f'list of scans without masks: {scans_wo_masks}')
@@ -168,7 +169,12 @@ def create_nifti_image_from_mask_data(mask_data: np.ndarray, scan_nifti: nibabel
     return mask_nifti
 
 
-def seconds_to_str(delta_seconds: float):
+def get_elapsed_time_str(time_start_seconds: float):
+    """
+    :param time_start_seconds:
+    time in seconds since the Epoch obtained with `time.time()` call
+    """
+    delta_seconds = time.time() - time_start_seconds
     trimmed = int(np.ceil(delta_seconds))  # trim microseconds
     res = str(datetime.timedelta(seconds=trimmed))
     return res
