@@ -1,5 +1,4 @@
 import os
-import shutil
 
 import click
 import numpy as np
@@ -17,14 +16,14 @@ This module can:
 """
 
 
-def add_raw_masks(masks_raw_dp, masks_out_dp):
+def add_raw_masks(masks_raw_dp, masks_out_dp, postfix: str = 'resegm2_fixed_bin'):
     """add raw (not thresholded) masks into dataset"""
 
     print(f'\nadd_raw_masks()')
     print(f'masks_raw_dp: {masks_raw_dp}')
     print(f'masks_out_dp: {masks_out_dp}')
 
-    masks_raw_fps = utils.get_nii_gz_files(masks_raw_dp)
+    masks_raw_fps = utils.get_nii_gz_filepaths(masks_raw_dp)
     print(f'# of raw masks to add: {len(masks_raw_fps)}')
 
     os.makedirs(masks_out_dp, exist_ok=True)
@@ -37,31 +36,31 @@ def add_raw_masks(masks_raw_dp, masks_out_dp):
             data = preprocessing.threshold_mask(data)
             mask_new = utils.change_nifti_data(data, mask_raw, is_scan=False)
 
-            mask_id = utils.get_nii_file_id(fp)
-            fp_new = os.path.join(masks_out_dp, f'{mask_id}_mask.nii.gz')
+            mask_id = utils.parse_image_id_from_filepath(fp)
+            fp_new = os.path.join(masks_out_dp, f'{mask_id}_{postfix}.nii.gz')
             utils.store_nifti_to_file(mask_new, fp_new)
 
             pbar.update()
 
 
-def add_binary_masks(masks_bin_dp, masks_out_dp, check_if_binary=False):
-    print('\nadd_binary_masks()')
-    print(f'masks_bin_dp: {masks_bin_dp}')
-    print(f'masks_out_dp: {masks_out_dp}')
-
-    masks_fps = utils.get_nii_gz_files(masks_bin_dp)
-    print(f'# of bin masks to add: {len(masks_fps)}')
-
-    os.makedirs(masks_out_dp, exist_ok=True)
-
-    if check_if_binary:
-        wrong_masks = check_masks_to_be_binary(masks_fps)
-
-    # copy them into masks_out_dp
-    for fp in masks_fps:
-        mask_id = utils.get_nii_file_id(fp)
-        fp_new = os.path.join(masks_out_dp, f'{mask_id}_mask.nii.gz')
-        shutil.copyfile(fp, fp_new)
+# def add_binary_masks(masks_bin_dp, masks_out_dp, check_if_binary=False):
+#     print('\nadd_binary_masks()')
+#     print(f'masks_bin_dp: {masks_bin_dp}')
+#     print(f'masks_out_dp: {masks_out_dp}')
+#
+#     masks_fps = utils.get_nii_gz_filepaths(masks_bin_dp)
+#     print(f'# of bin masks to add: {len(masks_fps)}')
+#
+#     os.makedirs(masks_out_dp, exist_ok=True)
+#
+#     if check_if_binary:
+#         wrong_masks = check_masks_to_be_binary(masks_fps)
+#
+#     # copy them into masks_out_dp
+#     for fp in masks_fps:
+#         mask_id = utils.parse_image_id_from_filepath(fp)
+#         fp_new = os.path.join(masks_out_dp, f'{mask_id}_mask.nii.gz')
+#         shutil.copyfile(fp, fp_new)
 
 
 def check_masks_to_be_binary(masks_fps):
@@ -94,8 +93,8 @@ def main(launch):
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
 
-    add_raw_masks(data_paths.masks_raw_dp, data_paths.masks_dp)
-    add_binary_masks(data_paths.masks_bin_dp, data_paths.masks_dp, check_if_binary=False)
+    add_raw_masks(data_paths.masks_raw_dp, f'{data_paths.root_data_dp}/masks_orientation_fixed_binary')
+    # add_binary_masks(data_paths.masks_bin_dp, data_paths.masks_dp, check_if_binary=False)
 
 
 if __name__ == '__main__':

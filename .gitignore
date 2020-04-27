@@ -1,6 +1,7 @@
 .idea
 __pycache__
 
-results
 venv
-
+notebooks
+results
+results_server

@@ -1,7 +1,3 @@
-# TODO: пытанні
-#   * што не так са 126 слайсам
-#   * 123, 163, 206 - тэлеграм
-
 import os
 import shutil
 
@@ -13,6 +9,8 @@ import const
 import utils
 from data import preprocessing
 
+
+# TODO: move to `nifti_dataset.py` as a `store_processed_as_numpy_dataset` method
 
 def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nifti=True):
     print(const.SEPARATOR)
@@ -27,6 +25,7 @@ def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nif
     os.makedirs(numpy_scans_dp, exist_ok=True)
     os.makedirs(numpy_masks_dp, exist_ok=True)
 
+    nifti_dp = None
     if store_nifti:
         nifti_dp = os.path.join(out_dp, 'nifti')
         os.makedirs(nifti_dp, exist_ok=True)
@@ -35,9 +34,9 @@ def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nif
         for ix, (k, v) in enumerate(files_dict.items()):
             pbar.set_description(k)
 
-            scan, scan_data = utils.load_nifti(v['scan'])
-            mask, mask_data = utils.load_nifti(v['mask'])
-            res_scan_data, res_mask_data, unwanted_indices = preprocessing.preprocess_scan(
+            scan, scan_data = utils.load_nifti(v['scan_fp'])
+            mask, mask_data = utils.load_nifti(v['mask_fp'])
+            res_scan_data, res_mask_data, unwanted_indices = preprocessing.process_scan_and_mask(
                 scan_data, mask_data, aug_cnt=aug_cnt, zoom_factor=zoom_factor)
 
             # check scans to have continuous lung mask
@@ -65,17 +64,6 @@ def preprocessing_pipeline(files_dict, out_dp, zoom_factor, aug_cnt=0, store_nif
             #     break
 
 
-def some_test():
-    pass
-    # k = '155'
-    # print(const.SEPARATOR)
-    # print(f'test: loading scan {k}')
-    # scan = utils.load_npy(os.path.join(dataset_dp, 'scans', f'{k}.npy')
-    # labels = utils.load_npy(os.path.join(dataset_dp, 'labels', f'{k}.npy')
-    # utils.print_np_stats(scan, 'scan')
-    # utils.print_np_stats(labels, 'labels')
-
-
 @click.command()
 @click.option('--launch', help='launch location',
               type=click.Choice(['local', 'server']), default='local')
@@ -86,7 +74,7 @@ def main(launch):
     files_dict = utils.get_files_dict(data_paths.scans_dp, data_paths.masks_dp)
 
     zoom_factor = const.ZOOM_FACTOR
-    dataset_dp = data_paths.get_dataset_dp(zoom_factor)
+    dataset_dp = data_paths.get_processed_dataset_dp(zoom_factor)
     preprocessing_pipeline(files_dict, dataset_dp, zoom_factor=zoom_factor, aug_cnt=0, store_nifti=True)
 
 

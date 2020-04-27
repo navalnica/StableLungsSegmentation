@@ -1,42 +1,58 @@
 import datetime
 import os
-import pickle
 import re
-import shutil
 import sys
+import time
 from collections import defaultdict
 from glob import glob
+from typing import List
 
+import humanize
 import matplotlib.pyplot as plt
 import nibabel
 import numpy as np
 import torch
-import tqdm
-from tabulate import tabulate
 
 import const
-from data import augmentations
 
 
-def get_nii_gz_files(dp: str):
+def get_class_name(cls):
+    name = type(cls).__name__
+    return name
+
+
+def get_nii_gz_filepaths(dp: str):
     fps = glob(os.path.join(dp, '*.nii.gz'))
     return fps
 
 
-def get_npy_files(dp: str):
+def get_npy_filepaths(dp: str):
     fps = glob(os.path.join(dp, '*.npy'))
     return fps
 
 
-def load_nifti(fp: str):
+def load_nifti(fp: str, load_data=True):
     """
-    Read .nii.gz image and return Nifti1Image together with numpy data array.
-    # TODO: use this function instead of nibabel.load(<filepath>).get_data()
-        everywhere in the code due to nibabel's deprecation behavior.
+    Read Nifti image and return Nifti1Image together with numpy data array.
+    Additionally check slope & intercept to be == (1, 0).
     """
     image = nibabel.load(fp)
-    data = np.asanyarray(image.dataobj)
+
+    # # TODO: check slope & intercept
+    # img_slope, img_inter = img.dataobj.slope, img.dataobj.inter
+    # assert (img_slope, img_inter) == (1, 0)
+
+    data = None if not load_data else np.asanyarray(image.dataobj)
     return image, data
+
+
+def load_nifti_slice(fp: str, ix: int):
+    """
+    Load single slice from Nifti image along z-axis
+    """
+    img, _ = load_nifti(fp, load_data=False)
+    img_slice = img.dataobj[:, :, ix]
+    return img_slice
 
 
 def load_npy(fp: str):
@@ -44,60 +60,92 @@ def load_npy(fp: str):
     return data
 
 
-def get_nii_file_id(fp: str):
-    """Extract idXXXX string from .nii.gz filepath"""
-    match = re.match(const.NII_GZ_FP_RE_PATTERN, fp)
+def parse_image_id_from_filepath(fp: str, get_postfix=False):
+    """Extract 'idXXXX' and optional postfix from .nii.gz or .npy filepath"""
+    match = re.match(const.IMAGE_FP_RE_PATTERN, fp)
     if match is None:
         raise ValueError(f'could not match file "{fp}" against re')
-    file_id = match.groups()[0]
-    return file_id
+    file_id = match.groups()[1]
+    file_postfix = match.groups()[2]
+    res = file_id if not get_postfix else (file_id, file_postfix)
+    return res
 
 
-def get_files_dict(scans_dp, masks_dp):
+def get_files_dict(scans_dp, masks_dp, ids: List[str] = None, mask_postfixes=('autolungs', 'mask')):
     """"
-    create dict of the following structure:
-        id: {'scan': scan_filepath, 'mask': mask_filepath}
-    and leave only those ids that have both scans and masks
+    Create dict of the following structure:
+    `img_id: {'scan_fp': scan_filepath, 'mask_fp': mask_filepath}`
+    and leave only those images that have both scans and masks.
+
+    Function uses id and postfix (optionally) parsed from image filepath.
+    If `scans_dp == masks_dp` then scan files only with '' postfix are selected
+    and mask files only with postfix in `mask_postfixes` are selected.
+
+    :param scans_dp: scans directory path
+    :param masks_dp: masks directory path
+    :param ids: list of ids to consider. if None parse all files
+    :param mask_postfixes: tuple of valid postfixed for mask files
     """
 
     print(const.SEPARATOR)
     print('get_files_dict()')
+    print(f'scans_dp: {scans_dp}')
+    print(f'masks_dp: {masks_dp}')
 
     d = defaultdict(dict)
+    same_dirs = (scans_dp == masks_dp)
+    print(f'scans_dp == masks_dp: {same_dirs}')
+    if same_dirs:
+        print(f'will selected masks only with postfix in {mask_postfixes} and scans without any postfix')
+    else:
+        print('will read any .nii.gz files in both scans_dp and masks_dp folders')
 
-    scans_fps = get_nii_gz_files(scans_dp)
-    print(f'# of scans found: {len(scans_fps)}')
+    scans_fps = get_nii_gz_filepaths(scans_dp)
     for fp in scans_fps:
-        file_id = get_nii_file_id(fp)
-        d[file_id].update({'scan': fp})
+        img_id, img_postfix = parse_image_id_from_filepath(fp, get_postfix=True)
+        if ids is None or img_id in ids:
+            if not same_dirs or not img_postfix:
+                d[img_id].update({'scan_fp': fp})
 
-    masks_fps = get_nii_gz_files(masks_dp)
-    print(f'# of masks found: {len(masks_fps)}')
+    masks_fps = get_nii_gz_filepaths(masks_dp)
     for fp in masks_fps:
-        file_id = get_nii_file_id(fp)
-        d[file_id].update({'mask': fp})
+        img_id, img_postfix = parse_image_id_from_filepath(fp, get_postfix=True)
+        if ids is None or img_id in ids:
+            if not same_dirs or img_postfix in mask_postfixes:
+                d[img_id].update({'mask_fp': fp})
 
-    d_filtered = {k: v for (k, v) in d.items() if 'scan' in v and 'mask' in v}
-    print(f'# of (scan, mask) pairs found: {len(d_filtered)}')
+    d_intersection = {k: v for (k, v) in d.items() if 'scan_fp' in v and 'mask_fp' in v}
+    scans_wo_masks = [k for (k, v) in d.items() if 'scan_fp' in v and 'mask_fp' not in v]
+    masks_wo_scans = [k for (k, v) in d.items() if 'scan_fp' not in v and 'mask_fp' in v]
 
-    return d_filtered
+    print(f'\n# of scans found: {len(scans_fps)}')
+    print(f'# of masks found: {len(masks_fps)}')
+    print(f'# of images with scans and masks: {len(d_intersection)}')
+    print(f'list of scans without masks: {scans_wo_masks}')
+    print(f'list of masks without scans: {masks_wo_scans}')
+
+    return d_intersection
+
+
+def store_nifti_to_file(image: nibabel.Nifti1Image, fp: str):
+    image.to_filename(fp)
 
 
 def change_nifti_data(
         data_new: np.ndarray, nifti_original: nibabel.Nifti1Image, is_scan: bool
 ):
     """
-    Create new Nifti1Image based on new data array and previous header.
+    Create new Nifti1Image from `data_new` array and header extracted from `nifti_original`.
 
-    :param data_new: new data array
-    :param nifti_original: previous scan or mask as Nifti1Image
-    :param is_scan: True indicates that scan data is passed, False - mask data
-    it helps to determine the right dtype to open scans or masks later with LesionLabeller
+    :param data_new:        new data array
+    :param nifti_original:  previous scan or mask as Nifti1Image
+    :param is_scan: if True treat `data_new` as a scan.
+                    if False - as a mask data. it's needed to check dtype
     """
     if is_scan:
-        data_new = data_new.astype(np.int16)
+        assert data_new.dtype == np.int16
     else:
-        data_new = data_new.astype(np.uint8)
+        assert data_new.dtype == np.uint8
 
     header_new = nifti_original.header.copy()
     header_new.set_data_shape(data_new.shape)
@@ -107,26 +155,15 @@ def change_nifti_data(
     return nifti_new
 
 
-def store_nifti_to_file(image: nibabel.Nifti1Image, fp: str):
-    image.to_filename(fp)
-
-
-def create_nifti_image_from_mask_data(mask_data: np.ndarray, scan_nifti: nibabel.Nifti1Image):
+def get_elapsed_time_str(time_start_seconds: float):
     """
-    create Nifti1Image for uint8 mask created for specified scan
-    :param mask_data: np.ndarray with mask
-    :param scan_nifti: nifti scan for which mask was created. used to extract affine matrix and slope & intercept
+    :param time_start_seconds:
+    time in seconds since the Epoch obtained with `time.time()` call
     """
-    mask_nifti = nibabel.Nifti1Image(mask_data, scan_nifti.affine)
-    assert mask_data.dtype == np.uint8
-    assert mask_nifti.get_data_dtype() == np.uint8
-
-    # set slope & intercept
-    slope, inter = scan_nifti.dataobj.slope, scan_nifti.dataobj.inter
-    assert (slope, inter) == (1, 0)
-    mask_nifti.header.set_slope_inter(slope, inter)
-
-    return mask_nifti
+    delta_seconds = time.time() - time_start_seconds
+    trimmed = int(np.ceil(delta_seconds))  # trim microseconds
+    res = str(datetime.timedelta(seconds=trimmed))
+    return res
 
 
 def show_slices(
@@ -184,111 +221,32 @@ def get_mid_slice(arr, matrix_axis=2):
     return data
 
 
-def copy_checkpoints_to_gdrive(checkpoints_dp):
-    date_str = datetime.date.today().strftime('%m.%d.%y')
-    gdrive_dest = f'/gdrive/My Drive/datasets/kursavaja_7_sem/{date_str}'
-    print(f'store checkpoints to {gdrive_dest}')
+def store_learning_curves(history: dict, out_dir: str = None):
+    """
+    :param history: dict of following structure:
+    '<metric name>' : {'train': List[float], 'valid': Lists[float]}
+    :param out_dir: directory path to save plots
+    """
+    loss_name = history['loss_name']
+    metrics = history['metrics']
+    n_epochs = len(list(metrics.values())[0]['train'])
 
-    if os.path.isdir(gdrive_dest):
-        print('removed old dir')
-        shutil.rmtree(gdrive_dest)
-
-    shutil.copytree(checkpoints_dp, gdrive_dest)
-
-
-def plot_learning_curves(epoch_metrics, dir='results'):
-    n_epochs = len(list(epoch_metrics.values())[0]['train'])
-    loss_name = epoch_metrics['loss_name']
     x = np.arange(1, n_epochs + 1)
-    fig, ax = plt.subplots(1, len(epoch_metrics) - 1, figsize=(6 * len(epoch_metrics), 5), squeeze=False)
+    fig, ax = plt.subplots(1, len(metrics), figsize=(6 * len(metrics), 5), squeeze=False)
     fig.suptitle(f'loss: {loss_name}. epochs: {n_epochs}')
 
-    for (m_name, m_dict), _ax in zip(epoch_metrics.items(), ax.flatten()):
-        if type(m_dict) == type(dict()):
-            _ax.plot(x, epoch_metrics[m_name]['train'], marker='o', label='train')
-            _ax.plot(x, epoch_metrics[m_name]['valid'], marker='o', label='valid')
-            _ax.set_title(m_name)
-            _ax.grid()
-            _ax.legend()
+    for (m_name, m_dict), cur_ax in zip(metrics.items(), ax.flatten()):
+        cur_ax.plot(x, metrics[m_name]['train'], marker='o', label='train')
+        cur_ax.plot(x, metrics[m_name]['valid'], marker='o', label='valid')
+        cur_ax.set_title(m_name)
+        cur_ax.grid()
+        cur_ax.legend()
 
-    fig.savefig(f'{dir}/{loss_name}_learning_curves.png', dpi=200)
+    fig.savefig(f'{out_dir}/learning_curves_{loss_name}.png', dpi=200)
 
 
 def squeeze_and_to_numpy(tz):
     return tz.squeeze().cpu().detach().numpy()
-
-
-def get_images_z_dimensions(images_fps, images_z_fp, restore_prev=True):
-    """extract z-dimension for each scan and store to .pickle"""
-    if restore_prev:
-        if not os.path.isfile(images_z_fp):
-            raise ValueError(f'no file found at {images_z_fp}')
-        print(f'reading from {images_z_fp}')
-        with open(images_z_fp, 'rb') as fin:
-            images_z = pickle.load(fin)
-    else:
-        images_z = {}
-        for fp in tqdm.tqdm(images_fps):
-            scan = load_npy(fp)
-            bn = os.path.basename(fp)
-            images_z[bn] = scan.shape[2]
-        print(f'storing images_z to {images_z_fp}')
-        with open(images_z_fp, 'wb') as fout:
-            pickle.dump(images_z, fout)
-
-    return images_z
-
-
-def get_scans_and_masks_batches(
-        indices, scans_dp, masks_dp,
-        source_slices_per_batch, aug_cnt, to_shuffle):
-    """
-    create generator that reads slices from numpy array and performs augmentations
-    :param indices: tuple (filename, z_index)
-    :param source_slices_per_batch: number of slices without augmentations. if None yield scans one by one
-    :param aug_cnt: number of augmentations per scan. has no effect if batch_size is None
-    :param to_shuffle: whether to shuffle passed indices
-    :return:
-    """
-
-    if to_shuffle:
-        np.random.shuffle(indices)
-
-    foo = lambda indices, dp: (
-        load_npy(os.path.join(dp, x[0]))[:, :, x[1]]
-        for x in indices
-    )
-    scans_gen = foo(indices, scans_dp)
-    masks_gen = foo(indices, masks_dp)
-
-    if source_slices_per_batch is not None:
-        # yield by batches
-        batch_size = source_slices_per_batch * (1 + aug_cnt)
-        scans_batch, masks_batch, ix_batch = [], [], []
-        cnt = 0
-        for s, m, ix in zip(scans_gen, masks_gen, indices):
-            scan_augs, mask_augs = augmentations.augment_slice(s, m, aug_cnt)
-
-            # fig, ax = show_slices(scan_augs);
-            # fig.savefig('scan_augs.png')
-            # fig, ax = show_slices(mask_augs);
-            # fig.savefig('mask_augs.png')
-
-            scans_batch.extend(scan_augs)
-            masks_batch.extend(mask_augs)
-            ix_batch.extend([ix] * (1 + aug_cnt))
-            cnt += aug_cnt + 1
-
-            if cnt % batch_size == 0:
-                yield (scans_batch, masks_batch, ix_batch)
-                scans_batch, masks_batch, ix_batch = [], [], []
-                cnt = 0
-        if len(scans_batch) > 0:
-            yield (scans_batch, masks_batch, ix_batch)
-    else:
-        # yield by one item
-        for s, m, ix in zip(scans_gen, masks_gen, indices):
-            yield (s, m, ix)
 
 
 def get_single_image_slice_gen(data: np.ndarray, batch_size=4):
@@ -302,73 +260,10 @@ def get_single_image_slice_gen(data: np.ndarray, batch_size=4):
 
 
 def print_cuda_memory_stats(device):
-    # TODO: use humanize package to print human-readable values
-    a = torch.cuda.memory_allocated(device=device) / 1024 / 1024
-    am = torch.cuda.max_memory_allocated(device=device) / 1024 / 1024
-    c = torch.cuda.memory_cached(device=device) / 1024 / 1024
-    cm = torch.cuda.max_memory_cached(device=device) / 1024 / 1024
-    print(f'allocated: {a : .2f} (max: {am : .2f}), cached: {c : .2f} (max: {cm : .2f})')
+    print('\nprint_cuda_memory_stats()')
 
-
-######### unused #########
-
-def compare_pair(pair):
-    initial = nibabel.load(pair['initial'])
-    resegm = nibabel.load(pair['resegm'])
-    transformed = np.flip(resegm.get_data(), axis=0)
-
-    print(affine_tables_to_str([initial, resegm]))
-
-    slices = [get_mid_slice(x, a) for a in [2, 1] for x in [initial.dataobj, resegm.dataobj, transformed]]
-    titles = [x for x in ['initial', 'resegm', 'transformed']]
-    titles.extend(titles)
-    show_slices(slices, titles, cols=3)
-
-
-def vec2str(vec):
-    return ('{:+9.3f}' * len(vec)).format(*vec)
-
-
-def affine_tables_to_str(nibabel_images):
-    headers = [os.path.basename(x.get_filename()) for x in nibabel_images]
-    table = [[vec2str(x.affine[i]) for x in nibabel_images] for i in range(4)]
-    return tabulate(table, headers=headers, tablefmt='pipe', stralign='center')
-
-
-def get_unique_signs_for_diag_elements(nibabel_fps):
-    diag_initial = []
-    for fn in tqdm.tqdm(nibabel_fps):
-        nii = nibabel.load(fn)
-        diag_initial.append(np.sign(np.diag(nii.affine)))
-    unique = np.unique(diag_initial, axis=0)
-    return unique
-
-
-def get_lower_intensities(img_dicts_list, img_type):
-    if not img_type in ['initial', 'fixed']:
-        raise ValueError("img_type must be in ['initial', 'fixed']")
-    lower_intensities = []
-    with tqdm.tqdm(total=len(img_dicts_list)) as pbar:
-        for k, v in img_dicts_list.items():
-            img = nibabel.load(v[img_type])
-            m = sorted(np.unique(img.get_data()))
-            lower_intensities.append({k: m})
-            pbar.update()
-    return lower_intensities
-
-
-def show_pixel_intensities_hist(img_dicts_list, img_ids, columns=4, width=5, height=4):
-    rows = len(img_ids) // columns + (1 if len(img_ids) % columns > 0 else 0)
-    fig, ax = plt.subplots(rows, columns, figsize=(width * columns, height * rows), squeeze=False)
-    ax_flatten = ax.flatten()
-    with tqdm.tqdm(total=len(img_ids)) as pbar:
-        for i in range(len(img_ids)):
-            img = nibabel.load(img_dicts_list[img_ids[i]]['initial'])
-            ax_flatten[i].hist(img.get_data().flatten())
-            ax_flatten[i].set_title(img_ids[i])
-            pbar.update()
-    for i in range(len(img_ids), len(ax_flatten)):
-        ax_flatten[i].set_visible(False)
-    fig.tight_layout()
-    fig.subplots_adjust(top=0.9)
-    return fig, ax
+    a = humanize.naturalsize(torch.cuda.memory_allocated(device=device))
+    am = humanize.naturalsize(torch.cuda.max_memory_allocated(device=device))
+    c = humanize.naturalsize(torch.cuda.memory_cached(device=device))
+    cm = humanize.naturalsize(torch.cuda.max_memory_cached(device=device))
+    print(f'allocated: {a} (max: {am}), cached: {c} (max: {cm})')

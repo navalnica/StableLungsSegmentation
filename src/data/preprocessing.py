@@ -22,9 +22,9 @@ def fix_resegm_masks(resegm_filenames, fixed_dp):
 
     pat = r'([^/]+)(.nii.gz)$'
     for fn in tqdm.tqdm(resegm_filenames.values()):
-        nii = nibabel.load(fn)
-        new_affine = utils.diagonal_abs(nii.affine)
-        new_data = np.flip(nii.get_data(), axis=0)
+        img, img_data = utils.load_nifti(fn, load_data=False)
+        new_affine = utils.diagonal_abs(img.affine)
+        new_data = np.flip(img_data, axis=0)
         new_nii = nibabel.Nifti1Image(new_data, new_affine)
         new_fp = os.path.join(fixed_dp, '_fixed'.join(re.search(pat, fn).groups()))
         new_nii.to_filename(new_fp)
@@ -39,7 +39,7 @@ def zoom_nearest(matrix, zoom_factor):
     return res
 
 
-def clip_scan(scan, thresh_lo=const.BODY_THRESH_LOW, thresh_hi=const.BODY_THRESH_HIGH):
+def clip_intensities(scan, thresh_lo=const.BODY_THRESH_LOW, thresh_hi=const.BODY_THRESH_HIGH):
     res = np.clip(scan, thresh_lo, thresh_hi)
     return res
 
@@ -108,20 +108,20 @@ def segment_body_from_scan(volume):
     return img_vol_
 
 
-def preprocess_scan(scan, labels, aug_cnt, zoom_factor=None, to_log=False):
+def process_scan_and_mask(scan, mask, aug_cnt=0, zoom_factor=None, to_log=False):
     """
     preprocess single CT-scan:
     segment body, clip values, add optional offline augmentations
 
     :param aug_cnt: number of augmentations per slice
     """
-    assert scan.shape == labels.shape, f'different shapes for input arrays: {scan.shape}, {labels.shape}'
+    assert scan.shape == mask.shape, f'different shapes for input arrays: {scan.shape}, {mask.shape}'
 
     scan = scan.astype(np.float32)
     if to_log:
         print('preprocess_scan():')
         utils.print_np_stats(scan, 'scan')
-        utils.print_np_stats(labels, 'labels')
+        utils.print_np_stats(mask, 'labels')
         print(f'zoom factor: {zoom_factor}')
         print(f'augmentations per slice: {aug_cnt}')
 
@@ -129,7 +129,7 @@ def preprocess_scan(scan, labels, aug_cnt, zoom_factor=None, to_log=False):
     if to_log:
         utils.print_np_stats(scan, 'scan segmented')
 
-    scan = clip_scan(scan)
+    scan = clip_intensities(scan)
     if to_log:
         utils.print_np_stats(scan, 'scan clipped')
 
@@ -139,11 +139,12 @@ def preprocess_scan(scan, labels, aug_cnt, zoom_factor=None, to_log=False):
 
     for z in range(scan.shape[2]):
         body_slice = scan[:, :, z]
-        mask_slice = labels[:, :, z]
+        mask_slice = mask[:, :, z]
 
         # check that slices before zoom have enough relevant pixels
         if np.sum(mask_slice) < const.MASK_MIN_PIXELS_THRESH or \
                 np.sum(body_slice > const.BODY_THRESH_LOW) < const.BODY_MIN_PIXELS_THRESH:
+            # TODO: consider not removing such slices from dataset
             unwanted_ix.append(z)
             continue
 
