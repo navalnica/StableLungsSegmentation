@@ -321,7 +321,7 @@ def train_valid(
 
 # def evaluate_segmentation(
 #         net, loss_func, state_dict_fp, indices_valid, scans_dp,
-#         labels_dp, max_top_losses_cnt=8, device='cuda', dir='results'
+#         labels_dp, max_top_losses_cnt=8, device='cuda', dir: str
 # ):
 #     """
 #     Find slices that have highest loss values for specified loss function.
@@ -351,7 +351,7 @@ def train_valid(
 #
 #     return top_losses_indices
 
-# def visualize_worst_best(net, scan_ix_and_hd, average, scans_dp, labels_dp, device, loss_name, dir='results'):
+# def visualize_worst_best(net, scan_ix_and_hd, average, scans_dp, labels_dp, device, loss_name, dir: str):
 #     # TODO: improve method
 #     hd_sorted = sorted(scan_ix_and_hd, key=lambda x: x[1])
 #
@@ -445,7 +445,7 @@ def average_hausdorff_distance(input_bin, target, max_ahd=np.inf):
     return res
 
 
-def get_hd_for_valid_slices(net, device, loss_name, indices_valid, scans_dp, labels_dp, dir='results'):
+def get_hd_for_valid_slices(net, device, loss_name, indices_valid, scans_dp, labels_dp, dir: str):
     """
     :param checkpoints: dict(loss_name: checkpoint_path)
     """
@@ -491,7 +491,7 @@ def get_hd_for_valid_slices(net, device, loss_name, indices_valid, scans_dp, lab
     return hd, hd_avg
 
 
-def build_hd_boxplot(hd_values, average, loss_name, dir='results', ax=None):
+def build_hd_boxplot(hd_values, average, loss_name, dir: str, ax=None):
     """
     build Hausdorff distances box plot
     """
@@ -511,7 +511,7 @@ def build_hd_boxplot(hd_values, average, loss_name, dir='results', ax=None):
 
 # ----------- not used methods ----------- #
 
-# def build_multiple_hd_boxplots(metrics_hd, average, loss_names_list, dir='results'):
+# def build_multiple_hd_boxplots(metrics_hd, average, loss_names_list, dir: str):
 #     """
 #     build Hausdorff distances box plot for multiple metrics on the same figure
 #     """

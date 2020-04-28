@@ -1,6 +1,7 @@
 import datetime
 import os
 import re
+import shutil
 import sys
 import time
 from collections import defaultdict
@@ -164,6 +165,52 @@ def get_elapsed_time_str(time_start_seconds: float):
     trimmed = int(np.ceil(delta_seconds))  # trim microseconds
     res = str(datetime.timedelta(seconds=trimmed))
     return res
+
+
+def yes_no_prompt(prompt_msg: str):
+    while True:
+        answer = input(f'{prompt_msg} [yes/no]: ').lower()
+        if answer == 'yes':
+            return True
+        elif answer == 'no':
+            return False
+        else:
+            print('please type "yes" or "no"')
+
+
+def clear_dir_content(dp: str, remove_hidden_files: bool = False):
+    print(f'\nclear_dir_content(). dp: "{dp}"')
+    dir_content = [os.path.join(dp, x) for x in os.listdir(dp)]
+    for c in dir_content:
+        if os.path.isdir(c):
+            shutil.rmtree(c)
+        elif os.path.isfile(c):
+            if os.path.basename(c).startswith('.') and not remove_hidden_files:
+                continue
+            os.unlink(c)
+
+
+def prompt_to_clear_dir_content_if_nonempty(dp: str, remove_hidden_files: bool = False):
+    if os.path.isdir(dp):
+        dir_content = os.listdir(dp)
+        dir_content_wo_hidden_files = [x for x in dir_content if not x.startswith('.')]
+        print(f'len(content): {len(dir_content)}. len(non hidden): {len(dir_content_wo_hidden_files)}')
+
+        # check if need to delete anything
+        if remove_hidden_files and len(dir_content) == 0 or \
+                not remove_hidden_files and len(dir_content_wo_hidden_files) == 0:
+            return
+
+        to_clear = yes_no_prompt(
+            f'directory "{dp}" is not empty.\ndo you want to clear its content?'
+        )
+        if to_clear:
+            print('removing...')
+            clear_dir_content(dp, remove_hidden_files=remove_hidden_files)
+        else:
+            print('will leave its content as is. it will probably get overwritten.')
+    else:
+        print(f'"{dp}" is not a directory')
 
 
 def show_slices(

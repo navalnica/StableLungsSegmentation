@@ -149,6 +149,7 @@ def process_scan_and_mask(scan, mask, aug_cnt=0, zoom_factor=None, to_log=False)
             continue
 
         if zoom_factor is not None:
+            # TODO: add condition `if zoom_factor != 1`
             body_slice = zoom_nearest(body_slice, zoom_factor)
             mask_slice = zoom_nearest(mask_slice, zoom_factor)
 

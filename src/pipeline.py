@@ -3,6 +3,7 @@
 #   * пашукаць альтэрнатывы для BatchNorm
 import os
 import pickle
+import time
 from typing import List
 
 import tqdm
@@ -37,9 +38,9 @@ class Pipeline:
 
     def __init__(self, device: torch.device):
         self.device = device
-        self.results_dp = 'results'
-        self.checkpoints_dp = os.path.join(self.results_dp, 'model_checkpoints')
-        self.segmented_dp = os.path.join(self.results_dp, 'segmented')
+        self.results_dp = const.RESULTS_DP
+        self.checkpoints_dp = const.MODEL_CHECKPOINTS_DP
+        self.segmented_dp = const.SEGMENTED_DP
 
     def create_net(self):
         self.net = UNet(n_channels=1, n_classes=1)
@@ -52,6 +53,9 @@ class Pipeline:
             train_orig_img_per_batch: int, train_aug_cnt: int, valid_batch_size: int,
             max_batches: int = None
     ):
+        # check if `self.results_dp` is nonempty
+        utils.prompt_to_clear_dir_content_if_nonempty(self.results_dp)
+        # create directories if needed
         os.makedirs(self.results_dp, exist_ok=True)
         os.makedirs(self.checkpoints_dp, exist_ok=True)
 
@@ -82,6 +86,8 @@ class Pipeline:
 
         # build and store learning curves plot
         utils.store_learning_curves(history, out_dir=self.results_dp)
+
+        utils.print_cuda_memory_stats(self.device)
 
     def load_net_from_weights(self, checkpoint_fp: str):
         """load model parameters from checkpoint .pth file"""
@@ -148,12 +154,19 @@ class Pipeline:
             scans_fps_filtered.append(fp)
         print(f'# of scans left after filtering: {len(scans_fps_filtered)}')
 
+        print('\nstarting segmentation...')
+        time_start_segmentation = time.time()
+
         with tqdm.tqdm(total=len(scans_fps_filtered)) as pbar:
             for fp in scans_fps_filtered:
                 cur_id = utils.parse_image_id_from_filepath(fp)
                 pbar.set_description(cur_id)
 
                 scan_nifti, scan_data = utils.load_nifti(fp)
+
+                # TODO: add the same preprocessing as during training (`clip_intensities`)
+                #  and compare results of segmentation
+
                 segmented_data = mu.segment_single_scan(scan_data, self.net, self.device)
                 segmented_nifti = utils.change_nifti_data(segmented_data, scan_nifti, is_scan=False)
 
@@ -161,3 +174,6 @@ class Pipeline:
                 utils.store_nifti_to_file(segmented_nifti, out_fp)
 
                 pbar.update()
+
+        print(f'\nsegmentation ended. elapsed time: {utils.get_elapsed_time_str(time_start_segmentation)}')
+        utils.print_cuda_memory_stats(self.device)

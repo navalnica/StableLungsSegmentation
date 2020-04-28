@@ -6,7 +6,6 @@ import click
 
 import const
 import os
-import utils
 from data.datasets import NiftiDataset
 from data.train_valid_split import load_split_from_json
 from model.losses import *
@@ -42,7 +41,7 @@ def train(
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
 
-    split = load_split_from_json(data_paths.get_train_valid_split_fp())
+    split = load_split_from_json(data_paths.train_valid_split_fp)
     scans_dp = data_paths.scans_dp
     masks_dp = data_paths.masks_dp
     train_dataset = NiftiDataset(scans_dp, masks_dp, split['train'])
@@ -57,7 +56,6 @@ def train(
         train_orig_img_per_batch=4, train_aug_cnt=0, valid_batch_size=4,
         max_batches=max_batches
     )
-    utils.print_cuda_memory_stats(device)
 
 
 @cli.command()
@@ -69,27 +67,40 @@ def train(
               help='checkpoint .pth filename with model parameters. '
                    'the file is searched for under "results/model_checkpoints" dir',
               type=click.STRING, default=None)
+@click.option('--scans', 'scans_dp', help='path to directory with nifti scans',
+              type=click.STRING, default=None)
+@click.option('--subset', help='what scans to segment under --scans dir: '
+                               'either all, or the ones from "validation" dataset',
+              type=click.Choice(['all', 'validation']), default='validation')
 @click.option('--out', 'output_dp', help='path to output directory with segmented masks',
               type=click.STRING, default=None)
 @click.option('--postfix', help='postfix to set for segmented masks',
               type=click.STRING, default=None)
-def segment_valid_scans(
-        launch: str, device: str, checkpoint_fn: str, output_dp: str, postfix: str
+def segment_scans(
+        launch: str, device: str,
+        checkpoint_fn: str, scans_dp: str, subset: str,
+        output_dp: str, postfix: str
 ):
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
-    split = load_split_from_json(data_paths.get_train_valid_split_fp())
 
     device_t = torch.device(device)
     pipeline = Pipeline(device=device_t)
 
     checkpoint_fn = checkpoint_fn or 'cp_NegDiceLoss_best.pth'
-    checkpoint_fp = os.path.join(f'results', 'model_checkpoints', checkpoint_fn)
+    checkpoint_fp = os.path.join(const.MODEL_CHECKPOINTS_DP, checkpoint_fn)
+
+    scans_dp = scans_dp or data_paths.scans_dp
+
+    ids_list = None
+    if subset == 'validation':
+        split = load_split_from_json(data_paths.train_valid_split_fp)
+        ids_list = split['valid']
+
     pipeline.segment_scans(
-        checkpoint_fp=checkpoint_fp, scans_dp=data_paths.scans_dp,
-        ids_list=split['valid'], output_dp=output_dp, postfix=postfix
+        checkpoint_fp=checkpoint_fp, scans_dp=scans_dp,
+        ids_list=ids_list, output_dp=output_dp, postfix=postfix
     )
-    utils.print_cuda_memory_stats(device)
 
 
 if __name__ == '__main__':
