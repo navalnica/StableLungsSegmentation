@@ -47,7 +47,7 @@ def load_nifti(fp: str, load_data=True):
     return image, data
 
 
-def load_nifti_slice(fp: str, ix: int):
+def load_nifti_slice(fp: str, ix: int) -> np.ndarray:
     """
     Load single slice from Nifti image along z-axis
     """

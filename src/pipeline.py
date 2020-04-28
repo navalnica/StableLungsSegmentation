@@ -15,6 +15,7 @@ from torch.utils.data import Dataset
 import const
 import model.utils as mu
 import utils
+from data import preprocessing
 from data.dataloader import DataLoader
 from model import UNet
 from model.losses import *
@@ -164,10 +165,10 @@ class Pipeline:
 
                 scan_nifti, scan_data = utils.load_nifti(fp)
 
-                # TODO: add the same preprocessing as during training (`clip_intensities`)
-                #  and compare results of segmentation
+                # clip intensities as during training
+                scan_data_clipped = preprocessing.clip_intensities(scan_data)
 
-                segmented_data = mu.segment_single_scan(scan_data, self.net, self.device)
+                segmented_data = mu.segment_single_scan(scan_data_clipped, self.net, self.device)
                 segmented_nifti = utils.change_nifti_data(segmented_data, scan_nifti, is_scan=False)
 
                 out_fp = os.path.join(output_dp, f'{cur_id}_{postfix}.nii.gz')

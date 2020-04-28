@@ -39,8 +39,12 @@ def zoom_nearest(matrix, zoom_factor):
     return res
 
 
-def clip_intensities(scan, thresh_lo=const.BODY_THRESH_LOW, thresh_hi=const.BODY_THRESH_HIGH):
-    res = np.clip(scan, thresh_lo, thresh_hi)
+def clip_intensities(
+        data: np.ndarray,
+        thresh_lo: float = const.BODY_THRESH_LOW,
+        thresh_hi: float = const.BODY_THRESH_HIGH
+):
+    res = np.clip(data, thresh_lo, thresh_hi)
     return res
 
 
