@@ -1,6 +1,5 @@
 import os
 import pickle
-from typing import List
 
 import tqdm
 from torch.utils.data import Dataset
@@ -10,11 +9,10 @@ import utils
 
 
 class NumpyDataset(Dataset):
-    def __init__(self, dataset_dp: str, img_ids: List[str]):
-        self.img_ids = img_ids
-        self.scans_dp = const.get_numpy_scans_dp(dataset_dp)
-        self.masks_dp = const.get_numpy_masks_dp(dataset_dp)
-        self.images_shapes_fp = const.get_shapes_fp(dataset_dp)
+    def __init__(self, scans_dp: str, masks_dp: str, images_shapes_fp: str):
+        self.scans_dp = scans_dp
+        self.masks_dp = masks_dp
+        self.images_shapes_fp = images_shapes_fp
 
         self._load_images_shapes()
         self._init_slice_info()
@@ -33,7 +31,7 @@ class NumpyDataset(Dataset):
                 'scan_fp': os.path.join(self.scans_dp, f'{cur_id}.npy'),
                 'mask_fp': os.path.join(self.masks_dp, f'{cur_id}.npy'),
                 'z_ix': z
-            } for cur_id in self.img_ids for z in range(self.shapes[cur_id][2])
+            } for (cur_id, cur_shape) in self.shapes.items() for z in range(cur_shape[2])
         ]
 
     def __len__(self):

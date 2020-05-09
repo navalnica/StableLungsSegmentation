@@ -11,7 +11,6 @@ from scipy.ndimage import morphology as morph, label
 
 import const
 import utils
-from data import augmentations
 
 
 def fix_resegm_masks(resegm_filenames, fixed_dp):
@@ -30,12 +29,30 @@ def fix_resegm_masks(resegm_filenames, fixed_dp):
         new_nii.to_filename(new_fp)
 
 
-def zoom_nearest(matrix, zoom_factor):
+def zoom_slice(matrix, zoom_factor):
     """
-    zoom 2D matrix with using only pixel values present in the source matrix.
+    zoom 2D matrix with using only pixel values
+    that are present in the source matrix (nearest-neighbor interpolation).
     """
     dsize = tuple([math.floor(x * zoom_factor) for x in reversed(matrix.shape)])
     res = cv2.resize(matrix, dsize=dsize, interpolation=cv2.INTER_NEAREST)
+    return res
+
+
+def zoom_volume_along_x_y(volume: np.ndarray, zoom_factor: float = None) -> np.ndarray:
+    """
+    zoom 3D np.ndarray along X and Y axes
+    """
+    if zoom_factor is None or zoom_factor == 1:
+        return volume
+
+    res = []
+    for z in range(volume.shape[2]):
+        cur_slice = volume[:, :, z]
+        cur_slice = zoom_slice(cur_slice, zoom_factor)
+        res.append(cur_slice)
+    res = np.stack(res, axis=2)
+
     return res
 
 
@@ -110,68 +127,3 @@ def segment_body_from_scan(volume):
     #     nib.save(dst_img_, dst_filename_)
 
     return img_vol_
-
-
-def process_scan_and_mask(scan, mask, aug_cnt=0, zoom_factor=None, to_log=False):
-    """
-    preprocess single CT-scan:
-    segment body, clip values, add optional offline augmentations
-
-    :param aug_cnt: number of augmentations per slice
-    """
-    assert scan.shape == mask.shape, f'different shapes for input arrays: {scan.shape}, {mask.shape}'
-
-    scan = scan.astype(np.float32)
-    if to_log:
-        print('preprocess_scan():')
-        utils.print_np_stats(scan, 'scan')
-        utils.print_np_stats(mask, 'labels')
-        print(f'zoom factor: {zoom_factor}')
-        print(f'augmentations per slice: {aug_cnt}')
-
-    scan = segment_body_from_scan(scan)
-    if to_log:
-        utils.print_np_stats(scan, 'scan segmented')
-
-    scan = clip_intensities(scan)
-    if to_log:
-        utils.print_np_stats(scan, 'scan clipped')
-
-    unwanted_ix = []
-    res_body = []
-    res_mask = []
-
-    for z in range(scan.shape[2]):
-        body_slice = scan[:, :, z]
-        mask_slice = mask[:, :, z]
-
-        # check that slices before zoom have enough relevant pixels
-        if np.sum(mask_slice) < const.MASK_MIN_PIXELS_THRESH or \
-                np.sum(body_slice > const.BODY_THRESH_LOW) < const.BODY_MIN_PIXELS_THRESH:
-            # TODO: consider not removing such slices from dataset
-            unwanted_ix.append(z)
-            continue
-
-        if zoom_factor is not None:
-            # TODO: add condition `if zoom_factor != 1`
-            body_slice = zoom_nearest(body_slice, zoom_factor)
-            mask_slice = zoom_nearest(mask_slice, zoom_factor)
-
-        if aug_cnt > 0:
-            body_augs, mask_augs = augmentations.augment_slice(body_slice, mask_slice, aug_cnt)
-            res_body.extend(body_augs)
-            res_mask.extend(mask_augs)
-        else:
-            res_body.append(body_slice)
-            res_mask.append(mask_slice)
-
-    res_body = np.stack(res_body, axis=2)
-    res_mask = np.stack(res_mask, axis=2)
-
-    if to_log:
-        print(f'{len(unwanted_ix)} unwanted indices: {unwanted_ix}')
-        utils.print_np_stats(res_body, 'res_body')
-        utils.print_np_stats(res_mask, 'res_mask')
-        print('res_mask unique values:', np.unique(res_mask))
-
-    return res_body, res_mask, unwanted_ix

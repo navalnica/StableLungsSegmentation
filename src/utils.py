@@ -57,8 +57,33 @@ def load_nifti_slice(fp: str, ix: int) -> np.ndarray:
 
 
 def load_npy(fp: str):
+    """
+    Load np.ndarray from file
+    """
     data = np.load(fp, allow_pickle=False)
     return data
+
+
+def store_npy(fp: str, data: np.ndarray):
+    """
+    Store np.ndarray to file
+    """
+    np.save(fp, data, allow_pickle=False)
+
+
+def validate_binary_mask(mask: np.ndarray) -> (bool, str):
+    """
+    Check mask to have np.uint8 dtype and have values only from {0, 1}.
+    """
+    ok = True
+    message = ''
+    if mask.dtype != np.uint8:
+        ok = False
+        message += f'dtype np.uint8: False;'
+    if not np.all((mask == 0) | (mask == 1)):
+        ok = False
+        message += f'is binary: False'
+    return ok, message
 
 
 def parse_image_id_from_filepath(fp: str, get_postfix=False):

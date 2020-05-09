@@ -10,9 +10,6 @@ BODY_THRESH_HIGH = 1500
 
 MASK_BINARIZATION_THRESH = -500
 
-BODY_MIN_PIXELS_THRESH = 600
-MASK_MIN_PIXELS_THRESH = 600
-
 ZOOM_FACTOR = 0.25
 
 # ----------- paths relative to project folder ----------- #

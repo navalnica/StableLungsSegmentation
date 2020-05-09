@@ -103,5 +103,19 @@ def segment_scans(
     )
 
 
+@cli.command()
+@click.option('--launch', help='launch location',
+              type=click.Choice(['local', 'server']), default='local')
+@click.option('--scans', 'scans_dp', help='path to directory with nifti scans',
+              type=click.STRING, default=None)
+@click.option('--masks', 'masks_dp', help='path to directory with nifti binary masks',
+              type=click.STRING, default=None)
+@click.option('--out', 'output_dp', help='path to output directory with segmented masks',
+              type=click.STRING, default=None)
+def create_numpy_dataset(launch: str, scans_dp: str, masks_dp: str, output_dp: str):
+    # TODO
+    pass
+
+
 if __name__ == '__main__':
     cli()
