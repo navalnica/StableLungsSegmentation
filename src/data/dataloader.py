@@ -1,12 +1,12 @@
 import numpy as np
-from torch.utils.data import Dataset
 
 from data import augmentations
+from data.datasets import BaseDataset
 
 
 class DataLoader:
 
-    def __init__(self, dataset: Dataset,
+    def __init__(self, dataset: BaseDataset,
                  orig_img_per_batch,
                  aug_cnt,
                  to_shuffle):
@@ -18,6 +18,7 @@ class DataLoader:
     def __str__(self):
         return (f'DataLoader('
                 f'len: {len(self)}; '
+                f'n_images: {self.n_images}; '
                 f'to_shuffle: {self.to_shuffle}; '
                 f'batch_size: {self.batch_size}; '
                 f'orig_img_per_batch: {self.orig_img_per_batch}; '
@@ -27,6 +28,10 @@ class DataLoader:
     @property
     def batch_size(self):
         return self.orig_img_per_batch * (1 + self.aug_cnt)
+
+    @property
+    def n_images(self):
+        return self.dataset.n_images
 
     def __len__(self):
         return len(self.dataset) * (1 + self.aug_cnt)

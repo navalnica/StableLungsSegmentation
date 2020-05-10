@@ -3,15 +3,16 @@ import pickle
 import shutil
 from typing import List
 
+import numpy as np
 import tqdm
-from torch.utils.data import Dataset
 
 import const
 import utils
 from data import preprocessing
+from data.datasets import BaseDataset
 
 
-class NiftiDataset(Dataset):
+class NiftiDataset(BaseDataset):
     def __init__(self, scans_dp: str, masks_dp: str, img_ids: List[str] = None):
         self.scans_dp = scans_dp
         self.masks_dp = masks_dp
@@ -42,6 +43,10 @@ class NiftiDataset(Dataset):
             for x in range(v['shape'][2])
         ]
 
+    @property
+    def n_images(self):
+        return len(self.info)
+
     def __len__(self):
         return len(self.slice_info)
 
@@ -63,15 +68,15 @@ class NiftiDataset(Dataset):
         }
         return sample
 
-    def store_as_numpy_dataset(self, out_dp: str, zoom_factor: float = None):
+    def store_as_numpy_dataset(self, out_dp: str, zoom_factor: float):
         """
         Convert Nifti images to numpy nd.arrays and store them to .npy files
         to save time on probably time-expensive zoom.
         """
         print(const.SEPARATOR)
         print('NiftiDataset.store_as_numpy_dataset():')
-
-        print(f'\nzoom factor: {zoom_factor}')
+        print(f'\nout_dp: {out_dp}')
+        print(f'zoom_factor: {zoom_factor}')
 
         if os.path.isdir(out_dp):
             print(f'\noutput dir "{out_dp}" already exists. \nwill remove and create a new one.')
@@ -98,18 +103,25 @@ class NiftiDataset(Dataset):
                 scan_img, scan_data = utils.load_nifti(cur_info['scan_fp'])
                 mask_img, mask_data = utils.load_nifti(cur_info['mask_fp'])
 
+                # check raw mask
                 mask_is_ok, msg = utils.validate_binary_mask(mask_data)
                 if not mask_is_ok:
                     raise ValueError(f'id: "{cur_id}". {msg}')
 
-                # clip
+                # clip scan
                 scan_data = preprocessing.clip_intensities(scan_data)
 
-                # zoom
+                # convert scan to np.int16 after clipping intensities if needed
+                if scan_data.dtype != np.int16:
+                    print(f'\nWARNING: scan {cur_id} has {scan_data.dtype} dtype.\n'
+                          f'will convert to np.int16')
+                    scan_data = scan_data.astype(np.int16)
+
+                # zoom scan and mask
                 scan_data = preprocessing.zoom_volume_along_x_y(scan_data, zoom_factor)
                 mask_data = preprocessing.zoom_volume_along_x_y(mask_data, zoom_factor)
 
-                # one more check
+                # check mask after all transformations
                 mask_is_ok, msg = utils.validate_binary_mask(mask_data)
                 if not mask_is_ok:
                     raise ValueError(f'id: "{cur_id}". {msg}')

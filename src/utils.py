@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import nibabel
 import numpy as np
 import torch
+import yaml
 
 import const
 
@@ -69,6 +70,12 @@ def store_npy(fp: str, data: np.ndarray):
     Store np.ndarray to file
     """
     np.save(fp, data, allow_pickle=False)
+
+
+def load_split_from_yaml(split_fp: str):
+    with open(split_fp) as in_stream:
+        split = yaml.safe_load(in_stream)
+    return split
 
 
 def validate_binary_mask(mask: np.ndarray) -> (bool, str):
@@ -216,6 +223,8 @@ def clear_dir_content(dp: str, remove_hidden_files: bool = False):
 
 
 def prompt_to_clear_dir_content_if_nonempty(dp: str, remove_hidden_files: bool = False):
+    print('\nprompt_to_clear_dir_content_if_nonempty()')
+
     if os.path.isdir(dp):
         dir_content = os.listdir(dp)
         dir_content_wo_hidden_files = [x for x in dir_content if not x.startswith('.')]
@@ -227,7 +236,7 @@ def prompt_to_clear_dir_content_if_nonempty(dp: str, remove_hidden_files: bool =
             return
 
         to_clear = yes_no_prompt(
-            f'directory "{dp}" is not empty.\ndo you want to clear its content?'
+            f'\ndirectory "{dp}" is not empty.\ndo you want to clear its content?'
         )
         if to_clear:
             print('removing...')

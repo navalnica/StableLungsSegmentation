@@ -93,7 +93,7 @@ def main(launch):
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
 
-    add_raw_masks(data_paths.masks_raw_dp, f'{data_paths.root_data_dp}/masks_orientation_fixed_binary')
+    add_raw_masks(data_paths.masks_raw_dp, f'{data_paths.root_dp}/masks_orientation_fixed_binary')
     # add_binary_masks(data_paths.masks_bin_dp, data_paths.masks_dp, check_if_binary=False)
 
 

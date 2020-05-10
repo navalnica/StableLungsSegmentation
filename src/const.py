@@ -18,9 +18,13 @@ RESULTS_DP = 'results'
 MODEL_CHECKPOINTS_DP = os.path.join(RESULTS_DP, 'model_checkpoints')
 SEGMENTED_DP = os.path.join(RESULTS_DP, 'segmented')
 
+DOCS_DP = 'docs'
+TRAIN_VALID_SPLIT_FP = os.path.join(DOCS_DP, 'train_valid_split.yaml')
+
 # ----------- data paths from the data root directory ----------- #
 
 ENV_IS_SERVER_LAUNCH = 'IS_SERVER_LAUNCH'
+DEFAULT_NUMPY_DATASET_DN = 'processed_z0.25'
 
 
 def set_launch_type_env_var(is_local_launch: bool):
@@ -34,7 +38,7 @@ class DataPaths:
     ROOT_DATA_DP_SERVER = '/media/data10T_1/datasets/CRDF_5_tmp/model_dataset'
 
     _is_server_launch = None
-    _root_data_dp = None
+    _root_dp = None
 
     def __init__(self):
         env_server_launch = os.environ.get(ENV_IS_SERVER_LAUNCH)
@@ -43,17 +47,17 @@ class DataPaths:
         else:
             self._is_local_launch = True
 
-        self._root_data_dp = DataPaths.ROOT_DATA_DP_LOCAL if self._is_local_launch \
+        self._root_dp = DataPaths.ROOT_DATA_DP_LOCAL if self._is_local_launch \
             else DataPaths.ROOT_DATA_DP_SERVER
 
-        self._original_dp = os.path.join(self._root_data_dp, 'original')
+        self._original_dp = os.path.join(self._root_dp, 'original')
         self._original_scans = os.path.join(self._original_dp, 'scans')
         self._original_masks = os.path.join(self._original_dp, 'masks')
-        self._train_valid_split_fp = os.path.join(self._root_data_dp, 'train_valid_split.json')
+        self._default_numpy_dataset_dp = os.path.join(self._root_dp, DEFAULT_NUMPY_DATASET_DN)
 
     @property
-    def root_data_dp(self):
-        return self._root_data_dp
+    def root_dp(self):
+        return self._root_dp
 
     @property
     def original_dp(self):
@@ -68,33 +72,46 @@ class DataPaths:
         return self._original_masks
 
     @property
-    def train_valid_split_fp(self):
-        return self._train_valid_split_fp
+    def default_numpy_dataset_dp(self):
+        return self._default_numpy_dataset_dp
 
-    def get_processed_dataset_dp(self, zoom_factor=None, mark_as_new=True):
+    def get_numpy_data_root_dp(self, zoom_factor=None):
         """
         get dir path where processed images are to be stored after dataset creation
         :param mark_as_new: whether to add '_new' postfix to avoid occasional overwrite on the the ready dataset
         """
-        dirname = f'processed_z{zoom_factor}' if zoom_factor is not None else 'processed_no_zoom'
-        if mark_as_new:
-            dirname += '_new'
-        return os.path.join(self._root_data_dp, dirname)
+        dirname = f'processed_z{zoom_factor}' \
+            if zoom_factor is not None and zoom_factor != 1 \
+            else 'processed_no_zoom'
+        return os.path.join(self._root_dp, dirname)
 
 
 # ----------- paths for NumpyDataset ----------- #
 
-def get_shapes_fp(dataset_dp):
-    return os.path.join(dataset_dp, 'numpy', 'shapes.pickle')
+class NumpyDataPaths:
+    def __init__(self, root_dp):
+        self._root_dp = root_dp
+        self._scans_dp = os.path.join(self._root_dp, 'numpy', 'scans')
+        self._masks_dp = os.path.join(self._root_dp, 'numpy', 'masks')
+        self._shapes_fp = os.path.join(self._root_dp, 'numpy', 'shapes.pickle')
+        self._nifti_dp = os.path.join(self._root_dp, 'nifti')
 
+    @property
+    def root_dp(self):
+        return self._root_dp
 
-def get_nifti_dp(dataset_dp):
-    return os.path.join(dataset_dp, 'nifti')
+    @property
+    def scans_dp(self):
+        return self._scans_dp
 
+    @property
+    def masks_dp(self):
+        return self._masks_dp
 
-def get_numpy_masks_dp(dataset_dp):
-    return os.path.join(dataset_dp, 'numpy', 'masks')
+    @property
+    def shapes_fp(self):
+        return self._shapes_fp
 
-
-def get_numpy_scans_dp(dataset_dp):
-    return os.path.join(dataset_dp, 'numpy', 'scans')
+    @property
+    def nifti_dp(self):
+        return self._nifti_dp
