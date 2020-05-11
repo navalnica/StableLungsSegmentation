@@ -10,13 +10,13 @@ import tqdm
 from matplotlib import pyplot as plt
 from torch import optim
 from torch.nn import BCELoss
-from torch.utils.data import Dataset
 
 import const
 import model.utils as mu
 import utils
 from data import preprocessing
 from data.dataloader import DataLoader
+from data.datasets import BaseDataset
 from model import UNet
 from model.losses import *
 
@@ -49,18 +49,34 @@ class Pipeline:
         return self.net
 
     def train(
-            self, train_dataset: Dataset, valid_dataset: Dataset,
+            self, train_dataset: BaseDataset, valid_dataset: BaseDataset,
             n_epochs: int, loss_func: nn.Module, metrics: List[nn.Module],
             train_orig_img_per_batch: int, train_aug_cnt: int, valid_batch_size: int,
-            max_batches: int = None
+            max_batches: int = None, initial_checkpoint_fp: str = None
     ):
+        """
+        Train wrapper.
+
+        :param train_orig_img_per_batch: number of images without augmentations in batch during training
+        :param train_aug_cnt: number of augmentations for each original image in batch during training
+        :param valid_batch_size: number of images in batch during validation
+        :param max_batches: maximum number of batches for training and validation to perform sanity check
+        :param initial_checkpoint_fp: path to .pth checkpoint for warm start
+        """
+
         # check if `self.results_dp` is nonempty
         utils.prompt_to_clear_dir_content_if_nonempty(self.results_dp)
         # create directories if needed
         os.makedirs(self.results_dp, exist_ok=True)
         os.makedirs(self.checkpoints_dp, exist_ok=True)
 
-        self.create_net()
+        if initial_checkpoint_fp is not None:
+            print('\ntraining with WARM START')
+            self.load_net_from_weights(initial_checkpoint_fp)
+        else:
+            print('\ntraining with COLD START')
+            self.create_net()
+
         optimizer = optim.SGD(self.net.parameters(), lr=0.001, momentum=0.9)
         train_loader = DataLoader(
             train_dataset, orig_img_per_batch=train_orig_img_per_batch,
@@ -84,6 +100,8 @@ class Pipeline:
         print(f'storing train history dict to "{history_out_fp}"')
         with open(history_out_fp, 'wb') as fout:
             pickle.dump(history, fout)
+
+        # TODO: store plots during training
 
         # build and store learning curves plot
         utils.store_learning_curves(history, out_dir=self.results_dp)

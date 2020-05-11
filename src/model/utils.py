@@ -229,7 +229,7 @@ def train_valid(
         # store parameters
         torch.save(
             net.state_dict(),
-            os.path.join(checkpoints_dp, f'cp_{loss_name}_epoch_{cur_epoch}.pth')
+            os.path.join(checkpoints_dp, f'cp_{loss_name}_epoch_{cur_epoch:02}.pth')
         )
 
         # ----------- early stopping ----------- #

@@ -29,9 +29,11 @@ def cli():
 @click.option('--max-batches', help='max number of batches to process. use as sanity check. '
                                     'if no value passed than will process the whole dataset.',
               type=click.INT, default=None)
+@click.option('--checkpoint', 'initial_checkpoint_fp', help='path to initial .pth checkpoint for warm start',
+              type=click.STRING, default=None)
 def train(
         launch: str, device: str, dataset_type: str,
-        n_epochs: int, max_batches: int
+        n_epochs: int, max_batches: int, initial_checkpoint_fp: str
 ):
     loss_func = METRICS_DICT['NegDiceLoss']
     metrics = [
@@ -61,8 +63,8 @@ def train(
     pipeline.train(
         train_dataset=train_dataset, valid_dataset=valid_dataset,
         n_epochs=n_epochs, loss_func=loss_func, metrics=metrics,
-        train_orig_img_per_batch=4, train_aug_cnt=0, valid_batch_size=4,
-        max_batches=max_batches
+        train_orig_img_per_batch=4, train_aug_cnt=1, valid_batch_size=4,
+        max_batches=max_batches, initial_checkpoint_fp=initial_checkpoint_fp
     )
 
 
@@ -95,7 +97,7 @@ def segment_scans(
     device_t = torch.device(device)
     pipeline = Pipeline(device=device_t)
 
-    checkpoint_fn = checkpoint_fn or 'cp_NegDiceLoss_best.pth'
+    checkpoint_fn = checkpoint_fn or 'cp_NegDiceLoss_epoch_18.pth'
     checkpoint_fp = os.path.join(const.MODEL_CHECKPOINTS_DP, checkpoint_fn)
 
     scans_dp = scans_dp or data_paths.scans_dp
@@ -104,6 +106,9 @@ def segment_scans(
     if subset == 'validation':
         split = utils.load_split_from_yaml(const.TRAIN_VALID_SPLIT_FP)
         ids_list = split['valid']
+
+        # TODO
+        # ids_list = ['id00502', 'id00521', 'id00527', 'id00668']
 
     pipeline.segment_scans(
         checkpoint_fp=checkpoint_fp, scans_dp=scans_dp,
