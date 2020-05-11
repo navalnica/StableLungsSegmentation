@@ -15,41 +15,19 @@ class UNet(nn.Module):
         self.up4 = up(128, 64)
         self.outc = outconv(64, n_classes)
 
-    def print_tensor_size(self, tensor):
-        # print('tensor size: ', tensor.size())
-        pass
-
     def forward(self, x):
-        self.print_tensor_size(x)
-
         x1 = self.inc(x)
-        self.print_tensor_size(x1)
 
         x2 = self.down1(x1)
-        self.print_tensor_size(x2)
-
         x3 = self.down2(x2)
-        self.print_tensor_size(x3)
-
         x4 = self.down3(x3)
-        self.print_tensor_size(x4)
-
         x5 = self.down4(x4)
-        self.print_tensor_size(x5)
 
         x = self.up1(x5, x4)
-        self.print_tensor_size(x)
-
         x = self.up2(x, x3)
-        self.print_tensor_size(x)
-
         x = self.up3(x, x2)
-        self.print_tensor_size(x)
-
         x = self.up4(x, x1)
-        self.print_tensor_size(x)
 
         x = self.outc(x)
-        self.print_tensor_size(x)
 
         return torch.sigmoid(x)

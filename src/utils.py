@@ -302,7 +302,7 @@ def get_mid_slice(arr, matrix_axis=2):
     return data
 
 
-def store_learning_curves(history: dict, out_dir: str = None):
+def store_learning_curves(history: dict, out_dir: str):
     """
     :param history: dict of following structure:
     '<metric name>' : {'train': List[float], 'valid': Lists[float]}
@@ -324,6 +324,39 @@ def store_learning_curves(history: dict, out_dir: str = None):
         cur_ax.legend()
 
     fig.savefig(f'{out_dir}/learning_curves_{loss_name}.png', dpi=200)
+
+
+def concat_histories_and_store_joined_learning_curves(
+        history1: dict, history2: dict,
+        warm_start_first_run_epoch_num: int, out_dir: str
+):
+    """
+    :param history1: dict of following structure:
+    '<metric name>' : {'train': List[float], 'valid': Lists[float]}
+    :param history2: dict with the same structure as `history1`
+    :param warm_start_first_run_epoch_num: epoch number (starting from 1) 
+    with checkpoint that was used as warm start parameters for the second run 
+    :param out_dir: directory path to save plots
+    """
+    metrics_names_common = sorted(history1['metrics'].keys() & history2['metrics'].keys())
+
+    metrics_common = {}
+    for c in metrics_names_common:
+        metrics_common[c] = dict()
+        for stage in ['train', 'valid']:
+            values = history1['metrics'][c][stage][:warm_start_first_run_epoch_num] + \
+                     history2['metrics'][c][stage]
+            metrics_common[c][stage] = values
+
+    loss_common = history1['loss_name'] \
+        if history1['loss_name'] == history2['loss_name'] \
+        else '<NO COMMON LOSS>'
+
+    history_common = {'loss_name': loss_common, 'metrics': metrics_common}
+
+    store_learning_curves(history_common, out_dir)
+
+    return history_common
 
 
 def squeeze_and_to_numpy(tz):

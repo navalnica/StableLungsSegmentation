@@ -17,7 +17,7 @@ import utils
 from data import preprocessing
 from data.dataloader import DataLoader
 from data.datasets import BaseDataset
-from model import UNet
+from model import UNet, MobileNetV2_UNet
 from model.losses import *
 
 plt.rcParams['font.size'] = 13
@@ -37,15 +37,26 @@ METRICS_DICT = {
 class Pipeline:
     net = None
 
-    def __init__(self, device: torch.device):
+    def __init__(self, model_architecture: str, device: torch.device):
+        assert model_architecture in ['unet', 'mobilenet']
+
+        self.model_architecture = model_architecture
         self.device = device
         self.results_dp = const.RESULTS_DP
         self.checkpoints_dp = const.MODEL_CHECKPOINTS_DP
         self.segmented_dp = const.SEGMENTED_DP
 
     def create_net(self):
-        self.net = UNet(n_channels=1, n_classes=1)
+        if self.model_architecture == 'unet':
+            self.net = UNet(n_channels=1, n_classes=1)
+        elif self.model_architecture == 'mobilenet':
+            self.net = MobileNetV2_UNet()
+        else:
+            raise ValueError(f'model_architecture must be in ["unet", "mobilenet"]. '
+                             f'passed: {self.model_architecture}')
+
         self.net.to(device=self.device)
+
         return self.net
 
     def train(

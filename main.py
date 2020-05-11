@@ -20,6 +20,8 @@ def cli():
 @cli.command()
 @click.option('--launch', help='launch location',
               type=click.Choice(['local', 'server']), default='local')
+@click.option('--architecture', 'model_architecture', help='model architecture (unet, mobilenet)',
+              type=click.Choice(['unet', 'mobilenet']), default='unet')
 @click.option('--device', help='device to use',
               type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0')
 @click.option('--dataset', 'dataset_type', help='dataset type',
@@ -32,7 +34,7 @@ def cli():
 @click.option('--checkpoint', 'initial_checkpoint_fp', help='path to initial .pth checkpoint for warm start',
               type=click.STRING, default=None)
 def train(
-        launch: str, device: str, dataset_type: str,
+        launch: str, model_architecture: str, device: str, dataset_type: str,
         n_epochs: int, max_batches: int, initial_checkpoint_fp: str
 ):
     loss_func = METRICS_DICT['NegDiceLoss']
@@ -58,7 +60,7 @@ def train(
         raise ValueError(f'dataset_type must be in ["nifti", "numpy"]. got {dataset_type}')
 
     device_t = torch.device(device)
-    pipeline = Pipeline(device=device_t)
+    pipeline = Pipeline(model_architecture=model_architecture, device=device_t)
 
     pipeline.train(
         train_dataset=train_dataset, valid_dataset=valid_dataset,
@@ -71,6 +73,8 @@ def train(
 @cli.command()
 @click.option('--launch', help='launch location',
               type=click.Choice(['local', 'server']), default='local')
+@click.option('--architecture', 'model_architecture', help='model architecture (unet, mobilenet)',
+              type=click.Choice(['unet', 'mobilenet']), default='unet')
 @click.option('--device', help='device to use',
               type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0')
 @click.option('--checkpoint', 'checkpoint_fn',
@@ -87,7 +91,7 @@ def train(
 @click.option('--postfix', help='postfix to set for segmented masks',
               type=click.STRING, default=None)
 def segment_scans(
-        launch: str, device: str,
+        launch: str, model_architecture: str, device: str,
         checkpoint_fn: str, scans_dp: str, subset: str,
         output_dp: str, postfix: str
 ):
@@ -95,7 +99,7 @@ def segment_scans(
     data_paths = const.DataPaths()
 
     device_t = torch.device(device)
-    pipeline = Pipeline(device=device_t)
+    pipeline = Pipeline(model_architecture=model_architecture, device=device_t)
 
     checkpoint_fn = checkpoint_fn or 'cp_NegDiceLoss_epoch_18.pth'
     checkpoint_fp = os.path.join(const.MODEL_CHECKPOINTS_DP, checkpoint_fn)

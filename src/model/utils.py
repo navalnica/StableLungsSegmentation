@@ -163,6 +163,7 @@ def train_valid(
     best_net_params = copy.deepcopy(net.state_dict())
 
     print(f'\ntrain parameters:\n\n'
+          f'model architecture: {utils.get_class_name(net)}\n'
           f'loss function: {loss_name}\n'
           f'optimizer: {optimizer}\n'
           f'number of epochs: {n_epochs}\n'
