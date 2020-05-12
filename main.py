@@ -65,7 +65,7 @@ def train(
     pipeline.train(
         train_dataset=train_dataset, valid_dataset=valid_dataset,
         n_epochs=n_epochs, loss_func=loss_func, metrics=metrics,
-        train_orig_img_per_batch=4, train_aug_cnt=1, valid_batch_size=4,
+        train_orig_img_per_batch=8, train_aug_cnt=1, valid_batch_size=16,
         max_batches=max_batches, initial_checkpoint_fp=initial_checkpoint_fp
     )
 

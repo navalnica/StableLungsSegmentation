@@ -134,10 +134,13 @@ def train_valid(
         net: UNet, loss_func: nn.Module, metrics: List[nn.Module],
         train_loader: DataLoader, valid_loader: DataLoader,
         optimizer: optim.SGD, device: torch.device, n_epochs: int,
-        checkpoints_dp: str, max_batches: int = None
+        checkpoints_dp: str, plots_dp: str, max_batches: int = None
 ) -> dict:
     """
+    :param checkpoints_dp: path to dir where to store checkpoints
+    :param plots_dp: path to dir where to store plots
     :param max_batches: max number of batches to process on each epoch. use to perform sanity check
+
     Returns
     -------
     dict with training and validation history of following structure:
@@ -232,6 +235,9 @@ def train_valid(
             net.state_dict(),
             os.path.join(checkpoints_dp, f'cp_{loss_name}_epoch_{cur_epoch:02}.pth')
         )
+
+        # build learning curves (overwrite existing file on each epoch)
+        utils.build_learning_curves(metrics=history, loss_name=loss_name, out_dir=plots_dp)
 
         # ----------- early stopping ----------- #
         if history[loss_name]['valid'][-1] < best_loss_valid - es_tolerance:

@@ -88,7 +88,7 @@ class Pipeline:
             print('\ntraining with COLD START')
             self.create_net()
 
-        optimizer = optim.SGD(self.net.parameters(), lr=0.001, momentum=0.9)
+        optimizer = optim.SGD(self.net.parameters(), lr=0.0005, momentum=0.9)
         train_loader = DataLoader(
             train_dataset, orig_img_per_batch=train_orig_img_per_batch,
             aug_cnt=train_aug_cnt, to_shuffle=True
@@ -102,7 +102,7 @@ class Pipeline:
             net=self.net, loss_func=loss_func, metrics=metrics,
             train_loader=train_loader, valid_loader=valid_loader,
             optimizer=optimizer, device=self.device, n_epochs=n_epochs,
-            checkpoints_dp=self.checkpoints_dp, max_batches=max_batches
+            checkpoints_dp=self.checkpoints_dp, plots_dp=self.results_dp, max_batches=max_batches
         )
 
         # store history dict to .pickle file
@@ -111,11 +111,6 @@ class Pipeline:
         print(f'storing train history dict to "{history_out_fp}"')
         with open(history_out_fp, 'wb') as fout:
             pickle.dump(history, fout)
-
-        # TODO: store plots during training
-
-        # build and store learning curves plot
-        utils.store_learning_curves(history, out_dir=self.results_dp)
 
         utils.print_cuda_memory_stats(self.device)
 

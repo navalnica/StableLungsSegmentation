@@ -302,14 +302,13 @@ def get_mid_slice(arr, matrix_axis=2):
     return data
 
 
-def store_learning_curves(history: dict, out_dir: str):
+def build_learning_curves(metrics: dict, loss_name: str, out_dir: str = None):
     """
-    :param history: dict of following structure:
+    :param metrics: dict of following structure:
     '<metric name>' : {'train': List[float], 'valid': Lists[float]}
-    :param out_dir: directory path to save plots
+    :param loss_name: name of the loss function
+    :param out_dir: directory path to save plots. do not save anything if None passed
     """
-    loss_name = history['loss_name']
-    metrics = history['metrics']
     n_epochs = len(list(metrics.values())[0]['train'])
 
     x = np.arange(1, n_epochs + 1)
@@ -323,12 +322,16 @@ def store_learning_curves(history: dict, out_dir: str):
         cur_ax.grid()
         cur_ax.legend()
 
-    fig.savefig(f'{out_dir}/learning_curves_{loss_name}.png', dpi=200)
+    if out_dir is not None:
+        out_fp = os.path.join(out_dir, f'learning_curves_{loss_name}.png')
+        fig.savefig(out_fp, dpi=200)
+
+    return fig, ax
 
 
 def concat_histories_and_store_joined_learning_curves(
         history1: dict, history2: dict,
-        warm_start_first_run_epoch_num: int, out_dir: str
+        warm_start_first_run_epoch_num: int, out_dir: str = None
 ):
     """
     :param history1: dict of following structure:
@@ -336,7 +339,7 @@ def concat_histories_and_store_joined_learning_curves(
     :param history2: dict with the same structure as `history1`
     :param warm_start_first_run_epoch_num: epoch number (starting from 1) 
     with checkpoint that was used as warm start parameters for the second run 
-    :param out_dir: directory path to save plots
+    :param out_dir: directory path to save plots. do not save anything if None passed
     """
     metrics_names_common = sorted(history1['metrics'].keys() & history2['metrics'].keys())
 
@@ -352,9 +355,10 @@ def concat_histories_and_store_joined_learning_curves(
         if history1['loss_name'] == history2['loss_name'] \
         else '<NO COMMON LOSS>'
 
+    build_learning_curves(
+        metrics=metrics_common, loss_name=loss_common, out_dir=out_dir
+    )
     history_common = {'loss_name': loss_common, 'metrics': metrics_common}
-
-    store_learning_curves(history_common, out_dir)
 
     return history_common
 
