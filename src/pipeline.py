@@ -39,12 +39,8 @@ class Pipeline:
 
     def __init__(self, model_architecture: str, device: torch.device):
         assert model_architecture in ['unet', 'mobilenet']
-
         self.model_architecture = model_architecture
         self.device = device
-        self.results_dp = const.RESULTS_DP
-        self.checkpoints_dp = const.MODEL_CHECKPOINTS_DP
-        self.segmented_dp = const.SEGMENTED_DP
 
     def create_net(self):
         if self.model_architecture == 'unet':
@@ -63,7 +59,7 @@ class Pipeline:
             self, train_dataset: BaseDataset, valid_dataset: BaseDataset,
             n_epochs: int, loss_func: nn.Module, metrics: List[nn.Module],
             train_orig_img_per_batch: int, train_aug_cnt: int, valid_batch_size: int,
-            max_batches: int = None, initial_checkpoint_fp: str = None
+            out_dp: str, max_batches: int = None, initial_checkpoint_fp: str = None
     ):
         """
         Train wrapper.
@@ -75,11 +71,10 @@ class Pipeline:
         :param initial_checkpoint_fp: path to .pth checkpoint for warm start
         """
 
-        # check if `self.results_dp` is nonempty
-        utils.prompt_to_clear_dir_content_if_nonempty(self.results_dp)
-        # create directories if needed
-        os.makedirs(self.results_dp, exist_ok=True)
-        os.makedirs(self.checkpoints_dp, exist_ok=True)
+        out_dp = out_dp or const.RESULTS_DN
+        # check if dir is nonempty
+        utils.prompt_to_clear_dir_content_if_nonempty(out_dp)
+        os.makedirs(out_dp, exist_ok=True)
 
         if initial_checkpoint_fp is not None:
             print('\ntraining with WARM START')
@@ -88,7 +83,7 @@ class Pipeline:
             print('\ntraining with COLD START')
             self.create_net()
 
-        optimizer = optim.SGD(self.net.parameters(), lr=0.0005, momentum=0.9)
+        optimizer = optim.SGD(self.net.parameters(), lr=0.0001, momentum=0.9)
         train_loader = DataLoader(
             train_dataset, orig_img_per_batch=train_orig_img_per_batch,
             aug_cnt=train_aug_cnt, to_shuffle=True
@@ -102,12 +97,12 @@ class Pipeline:
             net=self.net, loss_func=loss_func, metrics=metrics,
             train_loader=train_loader, valid_loader=valid_loader,
             optimizer=optimizer, device=self.device, n_epochs=n_epochs,
-            checkpoints_dp=self.checkpoints_dp, plots_dp=self.results_dp, max_batches=max_batches
+            out_dp=out_dp, max_batches=max_batches
         )
 
         # store history dict to .pickle file
         print(const.SEPARATOR)
-        history_out_fp = f'{self.results_dp}/train_history_{history["loss_name"]}.pickle'
+        history_out_fp = f'{out_dp}/train_history_{history["loss_name"]}.pickle'
         print(f'storing train history dict to "{history_out_fp}"')
         with open(history_out_fp, 'wb') as fout:
             pickle.dump(history, fout)
@@ -159,7 +154,7 @@ class Pipeline:
         print(const.SEPARATOR)
         print('Pipeline.segment_scans()')
 
-        output_dp = output_dp or self.segmented_dp
+        output_dp = output_dp or const.SEGMENTED_DN
         print(f'will store segmented masks under "{output_dp}"')
         os.makedirs(output_dp, exist_ok=True)
 

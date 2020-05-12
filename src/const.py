@@ -14,12 +14,12 @@ ZOOM_FACTOR = 0.25
 
 # ----------- paths relative to project folder ----------- #
 
-RESULTS_DP = 'results'
-MODEL_CHECKPOINTS_DP = os.path.join(RESULTS_DP, 'model_checkpoints')
-SEGMENTED_DP = os.path.join(RESULTS_DP, 'segmented')
+RESULTS_DN = 'results'
+MODEL_CHECKPOINTS_DN = 'model_checkpoints'
+SEGMENTED_DN = 'segmented'
 
-DOCS_DP = 'docs'
-TRAIN_VALID_SPLIT_FP = os.path.join(DOCS_DP, 'train_valid_split.yaml')
+DOCS_DN = 'docs'
+TRAIN_VALID_SPLIT_FP = os.path.join(DOCS_DN, 'train_valid_split.yaml')
 
 # ----------- data paths from the data root directory ----------- #
 

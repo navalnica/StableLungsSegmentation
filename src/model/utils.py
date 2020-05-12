@@ -134,11 +134,10 @@ def train_valid(
         net: UNet, loss_func: nn.Module, metrics: List[nn.Module],
         train_loader: DataLoader, valid_loader: DataLoader,
         optimizer: optim.SGD, device: torch.device, n_epochs: int,
-        checkpoints_dp: str, plots_dp: str, max_batches: int = None
+        out_dp: str, max_batches: int = None
 ) -> dict:
     """
-    :param checkpoints_dp: path to dir where to store checkpoints
-    :param plots_dp: path to dir where to store plots
+    :param out_dp: path to dir where to store checkpoints, history and learning curves plot
     :param max_batches: max number of batches to process on each epoch. use to perform sanity check
 
     Returns
@@ -149,9 +148,8 @@ def train_valid(
     print(const.SEPARATOR)
     print('train_valid():')
 
-    if not os.path.isdir(checkpoints_dp):
-        print(f'\ncheckpoints dir "{checkpoints_dp}" does not exist. will create a new one.')
-        os.makedirs(checkpoints_dp)
+    checkpoints_dp = os.path.join(out_dp, const.MODEL_CHECKPOINTS_DN)
+    os.makedirs(checkpoints_dp, exist_ok=True)
 
     history = {utils.get_class_name(m): {'train': [], 'valid': []} for m in metrics}
     loss_name = utils.get_class_name(loss_func)
@@ -237,9 +235,13 @@ def train_valid(
         )
 
         # build learning curves (overwrite existing file on each epoch)
-        utils.build_learning_curves(metrics=history, loss_name=loss_name, out_dir=plots_dp)
+        utils.build_learning_curves(metrics=history, loss_name=loss_name, out_dp=out_dp)
 
         # ----------- early stopping ----------- #
+
+        # TODO: allow any improvements (not only > tolerance)
+        #   use tolerance only for worsened loss
+
         if history[loss_name]['valid'][-1] < best_loss_valid - es_tolerance:
             best_loss_valid = history[loss_name]['valid'][-1]
             tqdm.tqdm.write(f'epoch {cur_epoch}: new best loss valid: {best_loss_valid : .4f}')

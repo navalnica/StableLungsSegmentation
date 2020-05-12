@@ -28,6 +28,8 @@ def cli():
               type=click.Choice(['nifti', 'numpy']), default='numpy')
 @click.option('--epochs', 'n_epochs', help='max number of epochs to train',
               type=click.INT, required=True)
+@click.option('--out', 'out_dp', help='path to dir to store training artifacts',
+              type=click.STRING, default=None)
 @click.option('--max-batches', help='max number of batches to process. use as sanity check. '
                                     'if no value passed than will process the whole dataset.',
               type=click.INT, default=None)
@@ -35,7 +37,7 @@ def cli():
               type=click.STRING, default=None)
 def train(
         launch: str, model_architecture: str, device: str, dataset_type: str,
-        n_epochs: int, max_batches: int, initial_checkpoint_fp: str
+        n_epochs: int, out_dp: str, max_batches: int, initial_checkpoint_fp: str
 ):
     loss_func = METRICS_DICT['NegDiceLoss']
     metrics = [
@@ -66,7 +68,7 @@ def train(
         train_dataset=train_dataset, valid_dataset=valid_dataset,
         n_epochs=n_epochs, loss_func=loss_func, metrics=metrics,
         train_orig_img_per_batch=8, train_aug_cnt=1, valid_batch_size=16,
-        max_batches=max_batches, initial_checkpoint_fp=initial_checkpoint_fp
+        out_dp=out_dp, max_batches=max_batches, initial_checkpoint_fp=initial_checkpoint_fp
     )
 
 
@@ -102,7 +104,7 @@ def segment_scans(
     pipeline = Pipeline(model_architecture=model_architecture, device=device_t)
 
     checkpoint_fn = checkpoint_fn or 'cp_NegDiceLoss_epoch_18.pth'
-    checkpoint_fp = os.path.join(const.MODEL_CHECKPOINTS_DP, checkpoint_fn)
+    checkpoint_fp = os.path.join(const.MODEL_CHECKPOINTS_DN, checkpoint_fn)
 
     scans_dp = scans_dp or data_paths.scans_dp
 
