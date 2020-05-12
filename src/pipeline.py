@@ -83,7 +83,11 @@ class Pipeline:
             print('\ntraining with COLD START')
             self.create_net()
 
-        optimizer = optim.SGD(self.net.parameters(), lr=0.0001, momentum=0.9)
+        # it is important to create optimizer only after moving model to appropriate device
+        # as model's parameters will be different objects after changing device
+        # optimizer = optim.SGD(self.net.parameters(), lr=0.0001, momentum=0.9)
+        optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
+
         train_loader = DataLoader(
             train_dataset, orig_img_per_batch=train_orig_img_per_batch,
             aug_cnt=train_aug_cnt, to_shuffle=True

@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 # from skimage.segmentation import mark_boundaries
 # from skimage.util import img_as_float
 from sklearn.metrics import pairwise_distances
-from torch import optim
+from torch.optim.optimizer import Optimizer
 
 import const
 import utils
@@ -49,7 +49,7 @@ def segment_single_scan(data: np.ndarray, net, device):
 def loss_batch(
         net: UNet, x_batch, y_batch,
         loss_func: nn.Module, metrics: List[nn.Module],
-        device: torch.device, optimizer=None
+        device: torch.device, optimizer: Optimizer = None
 ) -> dict:
     batch_stats = {}
     x = torch.tensor(x_batch, dtype=torch.float, device=device).unsqueeze(1)
@@ -86,7 +86,7 @@ def loss_batch(
 def loss_epoch(
         net: UNet, dataloader: DataLoader,
         loss_func: nn.Module, metrics: List[nn.Module],
-        device: torch.device, optimizer=None,
+        device: torch.device, optimizer: Optimizer = None,
         tqdm_description: str = None, max_batches: int = None
 ) -> dict:
     """
@@ -133,7 +133,7 @@ def loss_epoch(
 def train_valid(
         net: UNet, loss_func: nn.Module, metrics: List[nn.Module],
         train_loader: DataLoader, valid_loader: DataLoader,
-        optimizer: optim.SGD, device: torch.device, n_epochs: int,
+        optimizer: Optimizer, device: torch.device, n_epochs: int,
         out_dp: str, max_batches: int = None
 ) -> dict:
     """
