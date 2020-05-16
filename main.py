@@ -85,12 +85,6 @@ def train(
     device_t = torch.device(device)
     pipeline = Pipeline(model_architecture=model_architecture, device=device_t)
 
-    """
-    :param train_orig_img_per_batch: number of images without augmentations in batch during training
-    :param train_aug_cnt: number of augmentations for each original image in batch during training
-    :param valid_batch_size: number of images in batch during validation
-    """
-
     pipeline.train(
         train_loader=train_loader, valid_loader=valid_loader,
         n_epochs=n_epochs, loss_func=loss_func, metrics=metrics,

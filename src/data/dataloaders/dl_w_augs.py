@@ -17,6 +17,10 @@ class DataLoaderWithAugmentations(BaseDataLoader):
                  orig_img_per_batch,
                  aug_cnt,
                  to_shuffle):
+        """
+        :param orig_img_per_batch: number of images without augmentations in batch
+        :param aug_cnt: number of augmentations for each original image in batch
+        """
         self._dataset = dataset
         self._orig_img_per_batch = orig_img_per_batch
         self._aug_cnt = aug_cnt
