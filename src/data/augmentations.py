@@ -163,11 +163,10 @@ def get_single_augmentation(scan: np.ndarray, mask: np.ndarray):
     # use following assert to check if augmentations are performed
     # as intended during debug. no need to perform extra-computations during real training.
 
-    # TODO. comment
-    # check that no values besides {0, 1} are present in labels array
-    labels_unique_values = np.unique(mask_new)
-    assert np.setdiff1d(labels_unique_values, [0, 1]).size == 0, \
-        f'unique values in labels array: {labels_unique_values}'
+    # # check that no values besides {0, 1} are present in labels array
+    # labels_unique_values = np.unique(mask_new)
+    # assert np.setdiff1d(labels_unique_values, [0, 1]).size == 0, \
+    #     f'unique values in labels array: {labels_unique_values}'
 
     mask_new = mask_new.astype(np.uint8)
 
