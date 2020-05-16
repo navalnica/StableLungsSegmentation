@@ -12,6 +12,7 @@ import humanize
 import matplotlib.pyplot as plt
 import nibabel
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 
@@ -21,6 +22,12 @@ import const
 def get_class_name(cls):
     name = type(cls).__name__
     return name
+
+
+def check_var_to_be_iterable_collection(var):
+    check = var is None or isinstance(var, (list, tuple, np.ndarray))
+    if not check:
+        raise ValueError(f'expected iterable collection to be passed. got "{type(var)}"')
 
 
 def get_nii_gz_filepaths(dp: str):
@@ -119,7 +126,7 @@ def get_files_dict(scans_dp, masks_dp, ids: List[str] = None, mask_postfixes=('a
     :param ids: list of ids to consider. if None parse all files
     :param mask_postfixes: tuple of valid postfixed for mask files
     """
-    assert ids is None or isinstance(ids, (list, tuple))
+    check_var_to_be_iterable_collection(ids)
 
     print(const.SEPARATOR)
     print('get_files_dict()')
@@ -224,7 +231,8 @@ def clear_dir_content(dp: str, remove_hidden_files: bool = False):
 
 
 def prompt_to_clear_dir_content_if_nonempty(dp: str, remove_hidden_files: bool = False):
-    print('\nprompt_to_clear_dir_content_if_nonempty()')
+    print(const.SEPARATOR)
+    print('prompt_to_clear_dir_content_if_nonempty()')
 
     if os.path.isdir(dp):
         dir_content = os.listdir(dp)
@@ -386,3 +394,54 @@ def print_cuda_memory_stats(device):
     c = humanize.naturalsize(torch.cuda.memory_cached(device=device))
     cm = humanize.naturalsize(torch.cuda.max_memory_cached(device=device))
     print(f'allocated: {a} (max: {am}), cached: {c} (max: {cm})')
+
+
+def create_heavy_augs_mapping_from_image_description_table(fp):
+    """
+    :param fp: path to image_mapping.xlsx
+    """
+    df = pd.read_excel(fp)
+    print(f'df.shape: {df.shape}')
+
+    # parse string to list of values
+    df['image_ids'] = df['image_ids'].str.replace(r'[\'(),]', '').str.split()
+
+    # explode list of values
+    dfe = df.explode('image_ids')
+    print(f'df shape after explosion: {df.shape}')
+
+    # calc
+    dfe['sum'] = dfe[['obscured', 'bottom', 'middle', 'top', 'shape']].sum(axis=1)
+    dfe['hard_case'] = (dfe['severe'] == 1) | (dfe['sum'] > 1)
+
+    print('\nheavy augs value counts:')
+    print(dfe['hard_case'].value_counts())
+
+    # prettify
+    res = dfe[['image_ids', 'hard_case']].sort_values('image_ids')
+    res = res.rename(columns={'image_ids': 'image_id'})
+
+    # store to .csv
+    res.to_csv('hard_cases_mapping.csv', index=False)
+
+
+def get_image_ids_with_hard_cases_in_train_set(
+        hard_cases_mapping_fp: str, split_fp: str
+):
+    print(const.SEPARATOR)
+    print('get_image_ids_with_hard_cases_in_train_set()')
+
+    df = pd.read_csv(hard_cases_mapping_fp)
+    print(f'hard cases mapping shape: {df.shape}')
+
+    ids_hard = df[df['hard_case']]['image_id'].unique()
+    print(f'images with hard cases: {ids_hard.shape[0]}')
+
+    split = load_split_from_yaml(split_fp)
+    ids_train = np.unique(split['train'])
+    print(f'images in train set: {ids_train.shape[0]}')
+
+    ids_intersection = np.intersect1d(ids_hard, ids_train)
+    print(f'images in intersection: {ids_intersection.shape[0]}')
+
+    return ids_intersection

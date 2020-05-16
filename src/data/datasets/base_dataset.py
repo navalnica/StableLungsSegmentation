@@ -2,6 +2,9 @@ from typing import List
 
 from torch.utils.data import Dataset
 
+import const
+import utils
+
 
 class BaseDataset(Dataset):
     """
@@ -30,7 +33,14 @@ class BaseDataset(Dataset):
         of image with id in `ids_ids_heavy_augs`. overwrites `augs_cnt`.
         """
 
-        assert ids_heavy_augs is None or isinstance(ids_heavy_augs, (list, tuple))
+        print(const.SEPARATOR)
+        print('BaseDataset.set_different_aug_cnt_for_two_subsets()')
+        print('setting different number of augmentations for train subsets:')
+        print(f'augs_cnt: {augs_cnt}')
+        print(f'len(ids_heavy_augs): {len(ids_heavy_augs)}')
+        print(f'augs_cnt_heavy: {augs_cnt_heavy}')
+
+        utils.check_var_to_be_iterable_collection(ids_heavy_augs)
 
         new_slice_info = []
         for si in self._slice_info:

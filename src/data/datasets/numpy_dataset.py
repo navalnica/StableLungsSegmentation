@@ -12,7 +12,7 @@ from data.datasets import BaseDataset
 
 class NumpyDataset(BaseDataset):
     def __init__(self, scans_dp: str, masks_dp: str, images_shapes_fp: str, img_ids: List[str] = None):
-        assert img_ids is None or isinstance(img_ids, (list, tuple))
+        utils.check_var_to_be_iterable_collection(img_ids)
 
         self._scans_dp = scans_dp
         self._masks_dp = masks_dp

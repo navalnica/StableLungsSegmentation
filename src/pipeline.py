@@ -15,8 +15,7 @@ import const
 import model.utils as mu
 import utils
 from data import preprocessing
-from data.dataloaders import DataLoaderWithAugmentations
-from data.datasets import BaseDataset
+from data.dataloaders import BaseDataLoader
 from model import UNet, MobileNetV2_UNet
 from model.losses import *
 
@@ -56,17 +55,13 @@ class Pipeline:
         return self.net
 
     def train(
-            self, train_dataset: BaseDataset, valid_dataset: BaseDataset,
+            self, train_loader: BaseDataLoader, valid_loader: BaseDataLoader,
             n_epochs: int, loss_func: nn.Module, metrics: List[nn.Module],
-            train_orig_img_per_batch: int, train_aug_cnt: int, valid_batch_size: int,
             out_dp: str, max_batches: int = None, initial_checkpoint_fp: str = None
     ):
         """
         Train wrapper.
 
-        :param train_orig_img_per_batch: number of images without augmentations in batch during training
-        :param train_aug_cnt: number of augmentations for each original image in batch during training
-        :param valid_batch_size: number of images in batch during validation
         :param max_batches: maximum number of batches for training and validation to perform sanity check
         :param initial_checkpoint_fp: path to .pth checkpoint for warm start
         """
@@ -76,26 +71,18 @@ class Pipeline:
         utils.prompt_to_clear_dir_content_if_nonempty(out_dp)
         os.makedirs(out_dp, exist_ok=True)
 
+        print(const.SEPARATOR)
         if initial_checkpoint_fp is not None:
-            print('\ntraining with WARM START')
+            print('training with WARM START')
             self.load_net_from_weights(initial_checkpoint_fp)
         else:
-            print('\ntraining with COLD START')
+            print('training with COLD START')
             self.create_net()
 
         # it is important to create optimizer only after moving model to appropriate device
         # as model's parameters will be different objects after changing device
         # optimizer = optim.SGD(self.net.parameters(), lr=0.0001, momentum=0.9)
         optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
-
-        train_loader = DataLoaderWithAugmentations(
-            train_dataset, orig_img_per_batch=train_orig_img_per_batch,
-            aug_cnt=train_aug_cnt, to_shuffle=True
-        )
-        valid_loader = DataLoaderWithAugmentations(
-            valid_dataset, orig_img_per_batch=valid_batch_size,
-            aug_cnt=0, to_shuffle=False
-        )
 
         history = mu.train_valid(
             net=self.net, loss_func=loss_func, metrics=metrics,
@@ -130,9 +117,8 @@ class Pipeline:
     #     if self.net is None:
     #         raise ValueError('must call train() or load_model() before evaluating')
     #
-    #     # TODO: remove upper bound
     #     hd, hd_avg = mu.get_hd_for_valid_slices(
-    #         self.net, self.device, loss_name, self.indices_valid[:], self.scans_dp, self.masks_dp
+    #         self.net, self.device, loss_name, self.indices_valid, self.scans_dp, self.masks_dp
     #     )
     #
     #     hd_list = [x[1] for x in hd]
@@ -155,7 +141,7 @@ class Pipeline:
         :param output_dp:   path to directory to store results of segmentation
         :param postfix:     postfix of segmented filenames
         """
-        assert ids is None or isinstance(ids, (list, tuple))
+        utils.check_var_to_be_iterable_collection(ids)
 
         print(const.SEPARATOR)
         print('Pipeline.segment_scans()')

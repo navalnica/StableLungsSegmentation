@@ -20,6 +20,7 @@ SEGMENTED_DN = 'segmented'
 
 DOCS_DN = 'docs'
 TRAIN_VALID_SPLIT_FP = os.path.join(DOCS_DN, 'train_valid_split.yaml')
+HARD_CASES_MAPPING = os.path.join(DOCS_DN, 'hard_cases_mapping.csv')
 
 # ----------- data paths from the data root directory ----------- #
 

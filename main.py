@@ -6,7 +6,8 @@ import click
 
 import utils
 import const
-from data.datasets import NiftiDataset, NumpyDataset
+from data.datasets import *
+from data.dataloaders import *
 from model.losses import *
 from pipeline import Pipeline, METRICS_DICT
 
@@ -20,11 +21,12 @@ def cli():
 @click.option('--launch', help='launch location',
               type=click.Choice(['local', 'server']), default='local')
 @click.option('--architecture', 'model_architecture', help='model architecture (unet, mobilenet)',
-              type=click.Choice(['unet', 'mobilenet']), default='unet')
+              type=click.Choice(['unet', 'mobilenet']), default='mobilenet')
 @click.option('--device', help='device to use',
               type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0')
 @click.option('--dataset', 'dataset_type', help='dataset type',
               type=click.Choice(['nifti', 'numpy']), default='numpy')
+@click.option('--heavy-augs/--no-heavy-augs', 'apply_heavy_augs', default=True)
 @click.option('--epochs', 'n_epochs', help='max number of epochs to train',
               type=click.INT, required=True)
 @click.option('--out', 'out_dp', help='path to dir to store training artifacts',
@@ -36,7 +38,8 @@ def cli():
               type=click.STRING, default=None)
 def train(
         launch: str, model_architecture: str, device: str, dataset_type: str,
-        n_epochs: int, out_dp: str, max_batches: int, initial_checkpoint_fp: str
+        apply_heavy_augs: bool, n_epochs: int, out_dp: str, max_batches: int,
+        initial_checkpoint_fp: str
 ):
     loss_func = METRICS_DICT['NegDiceLoss']
     metrics = [
@@ -58,15 +61,39 @@ def train(
         train_dataset = NumpyDataset(ndp.scans_dp, ndp.masks_dp, ndp.shapes_fp, split['train'])
         valid_dataset = NumpyDataset(ndp.scans_dp, ndp.masks_dp, ndp.shapes_fp, split['valid'])
     else:
-        raise ValueError(f'dataset_type must be in ["nifti", "numpy"]. got {dataset_type}')
+        raise ValueError(f"`dataset` should be in ['nifti', 'numpy']. passed '{dataset_type}'")
+
+    # init train data loader
+    if apply_heavy_augs:
+        print('\nwill apply heavy augmentations')
+
+        # set different augmentations for hard and general cases
+        ids_hard_train = utils.get_image_ids_with_hard_cases_in_train_set(
+            const.HARD_CASES_MAPPING, const.TRAIN_VALID_SPLIT_FP
+        )
+        train_dataset.set_different_aug_cnt_for_two_subsets(1, ids_hard_train, 3)
+        # init loader
+        train_loader = DataLoaderNoAugmentations(train_dataset, batch_size=16, to_shuffle=True)
+    else:
+        print('\nwill apply the same augmentations for all train images')
+        train_loader = DataLoaderWithAugmentations(
+            train_dataset, orig_img_per_batch=8, aug_cnt=1, to_shuffle=True
+        )
+
+    valid_loader = DataLoaderNoAugmentations(valid_dataset, batch_size=32, to_shuffle=False)
 
     device_t = torch.device(device)
     pipeline = Pipeline(model_architecture=model_architecture, device=device_t)
 
+    """
+    :param train_orig_img_per_batch: number of images without augmentations in batch during training
+    :param train_aug_cnt: number of augmentations for each original image in batch during training
+    :param valid_batch_size: number of images in batch during validation
+    """
+
     pipeline.train(
-        train_dataset=train_dataset, valid_dataset=valid_dataset,
+        train_loader=train_loader, valid_loader=valid_loader,
         n_epochs=n_epochs, loss_func=loss_func, metrics=metrics,
-        train_orig_img_per_batch=8, train_aug_cnt=1, valid_batch_size=16,
         out_dp=out_dp, max_batches=max_batches, initial_checkpoint_fp=initial_checkpoint_fp
     )
 
