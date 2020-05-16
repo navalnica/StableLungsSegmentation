@@ -16,7 +16,7 @@ from torch.optim.optimizer import Optimizer
 
 import const
 import utils
-from data.dataloader import DataLoader
+from data.dataloaders import BaseDataLoader
 from model import UNet
 from utils import get_single_image_slice_gen
 
@@ -84,7 +84,7 @@ def loss_batch(
 
 
 def loss_epoch(
-        net: UNet, dataloader: DataLoader,
+        net: UNet, dataloader: BaseDataLoader,
         loss_func: nn.Module, metrics: List[nn.Module],
         device: torch.device, optimizer: Optimizer = None,
         tqdm_description: str = None, max_batches: int = None
@@ -132,7 +132,7 @@ def loss_epoch(
 
 def train_valid(
         net: UNet, loss_func: nn.Module, metrics: List[nn.Module],
-        train_loader: DataLoader, valid_loader: DataLoader,
+        train_loader: BaseDataLoader, valid_loader: BaseDataLoader,
         optimizer: Optimizer, device: torch.device, n_epochs: int,
         out_dp: str, max_batches: int = None
 ) -> dict:

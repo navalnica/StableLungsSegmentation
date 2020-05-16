@@ -119,6 +119,7 @@ def get_files_dict(scans_dp, masks_dp, ids: List[str] = None, mask_postfixes=('a
     :param ids: list of ids to consider. if None parse all files
     :param mask_postfixes: tuple of valid postfixed for mask files
     """
+    assert ids is None or isinstance(ids, (list, tuple))
 
     print(const.SEPARATOR)
     print('get_files_dict()')

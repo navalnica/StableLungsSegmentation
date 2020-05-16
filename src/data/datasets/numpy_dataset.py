@@ -6,57 +6,71 @@ import tqdm
 
 import const
 import utils
+from data import augmentations
 from data.datasets import BaseDataset
 
 
 class NumpyDataset(BaseDataset):
     def __init__(self, scans_dp: str, masks_dp: str, images_shapes_fp: str, img_ids: List[str] = None):
-        self.scans_dp = scans_dp
-        self.masks_dp = masks_dp
-        self.images_shapes_fp = images_shapes_fp
-        self.img_ids = img_ids
+        assert img_ids is None or isinstance(img_ids, (list, tuple))
+
+        self._scans_dp = scans_dp
+        self._masks_dp = masks_dp
+        self._images_shapes_fp = images_shapes_fp
+        self._img_ids = img_ids
 
         self._load_images_shapes()
         self._init_slice_info()
 
     def _load_images_shapes(self):
-        if not os.path.isfile(self.images_shapes_fp):
-            raise FileNotFoundError(f'{self.images_shapes_fp}')
+        if not os.path.isfile(self._images_shapes_fp):
+            raise FileNotFoundError(f'{self._images_shapes_fp}')
 
-        print(f'loading shapes dict from "{self.images_shapes_fp}"')
-        with open(self.images_shapes_fp, 'rb') as fin:
-            self.shapes = pickle.load(fin)
+        print(f'loading shapes dict from "{self._images_shapes_fp}"')
+        with open(self._images_shapes_fp, 'rb') as fin:
+            self._shapes = pickle.load(fin)
 
         # filter images
-        self.shapes = {k: v for (k, v) in self.shapes.items() if k in self.img_ids}
+        if self._img_ids is not None:
+            self._shapes = {k: v for (k, v) in self._shapes.items() if k in self._img_ids}
 
     def _init_slice_info(self):
-        self.slice_info = [
+        self._slice_info = [
             {
                 'id': cur_id,
-                'scan_fp': os.path.join(self.scans_dp, f'{cur_id}.npy'),
-                'mask_fp': os.path.join(self.masks_dp, f'{cur_id}.npy'),
+                'scan_fp': os.path.join(self._scans_dp, f'{cur_id}.npy'),
+                'mask_fp': os.path.join(self._masks_dp, f'{cur_id}.npy'),
                 'z_ix': z
-            } for (cur_id, cur_shape) in self.shapes.items() for z in range(cur_shape[2])
+            } for (cur_id, cur_shape) in self._shapes.items() for z in range(cur_shape[2])
         ]
 
     @property
     def n_images(self):
-        return len(self.shapes)
-
-    def __len__(self):
-        return len(self.slice_info)
+        return len(self._shapes)
 
     def __getitem__(self, ix):
-        cur_info = self.slice_info[ix]
+        """
+        Yield (scan, mask, description) tuple for single slice.
+
+        If `slice_info` dict has 'augment' == True for specified slice
+        than augmentations are applied before yielding results.
+        """
+        cur_info = self._slice_info[ix]
         cur_id = cur_info['id']
         z_ix = cur_info['z_ix']
 
+        scan = utils.load_npy(cur_info['scan_fp'])[:, :, z_ix]
+        mask = utils.load_npy(cur_info['mask_fp'])[:, :, z_ix]
+
+        if 'augment' in cur_info and cur_info['augment'] is True:
+            scan, mask = augmentations.get_single_augmentation(scan, mask)
+
         sample = {
-            'scan': utils.load_npy(cur_info['scan_fp'])[:, :, z_ix],
-            'mask': utils.load_npy(cur_info['mask_fp'])[:, :, z_ix],
+            'scan': scan,
+            'mask': mask,
             'description': f'{cur_id}_{z_ix}'
         }
+
         return sample
 
     @staticmethod

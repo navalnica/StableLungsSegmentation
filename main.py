@@ -3,7 +3,6 @@ import sys
 sys.path.append('./src')
 
 import click
-import os
 
 import utils
 import const
@@ -79,9 +78,8 @@ def train(
               type=click.Choice(['unet', 'mobilenet']), default='unet')
 @click.option('--device', help='device to use',
               type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0')
-@click.option('--checkpoint', 'checkpoint_fn',
-              help='checkpoint .pth filename with model parameters. '
-                   'the file is searched for under "results/model_checkpoints" dir',
+@click.option('--checkpoint', 'checkpoint_fp',
+              help='path to checkpoint .pth file',
               type=click.STRING, default=None)
 @click.option('--scans', 'scans_dp', help='path to directory with nifti scans',
               type=click.STRING, default=None)
@@ -94,7 +92,7 @@ def train(
               type=click.STRING, default=None)
 def segment_scans(
         launch: str, model_architecture: str, device: str,
-        checkpoint_fn: str, scans_dp: str, subset: str,
+        checkpoint_fp: str, scans_dp: str, subset: str,
         output_dp: str, postfix: str
 ):
     const.set_launch_type_env_var(launch == 'local')
@@ -102,9 +100,6 @@ def segment_scans(
 
     device_t = torch.device(device)
     pipeline = Pipeline(model_architecture=model_architecture, device=device_t)
-
-    checkpoint_fn = checkpoint_fn or 'cp_NegDiceLoss_epoch_18.pth'
-    checkpoint_fp = os.path.join(const.MODEL_CHECKPOINTS_DN, checkpoint_fn)
 
     scans_dp = scans_dp or data_paths.scans_dp
 
@@ -118,7 +113,7 @@ def segment_scans(
 
     pipeline.segment_scans(
         checkpoint_fp=checkpoint_fp, scans_dp=scans_dp,
-        ids_list=ids_list, output_dp=output_dp, postfix=postfix
+        ids=ids_list, output_dp=output_dp, postfix=postfix
     )
 
 

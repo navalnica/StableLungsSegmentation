@@ -150,45 +150,44 @@ def augment(_img, aug_vector):
     return _img
 
 
-# example. written by Eduard Sniazko.
-# im_s = np.dstack((tmp_src_img_left, msk_left))
-# for a_ in range(number_of_augmented_):
-#    cur_aug = gen_aug_vector()
-#    print(cur_aug)
-#    im_s3 = deepcopy(im_s)
-#    im_s2 = augment(im_s3, cur_aug)
-#    im1_ = im_s2[:, :, :-1]
-#    mask1_ = im_s2[:, :, -1:].astype(np.uint8)
-
-
-def augment_slice(scan, labels, aug_cnt=3):
+def get_single_augmentation(scan: np.ndarray, mask: np.ndarray):
     """
-    augment 2D slices from scan and labels
-    :return: list of augmented images for scan slice and for labels slice
+    Get single augmentation for 2D scan slice and mask slice.
+    """
+    aug_vector = gen_aug_vector()
+    stacked = np.dstack([scan, mask])
+    stacked_augmented = augment(stacked, aug_vector)
+    scan_new = stacked_augmented[:, :, 0]
+    mask_new = stacked_augmented[:, :, 1]
+
+    # use following assert to check if augmentations are performed
+    # as intended during debug. no need to perform extra-computations during real training.
+
+    # check that no values besides {0, 1} are present in labels array
+    labels_unique_values = np.unique(mask_new)
+    assert np.setdiff1d(labels_unique_values, [0, 1]).size == 0, \
+        f'unique values in labels array: {labels_unique_values}'
+
+    mask_new = mask_new.astype(np.uint8)
+
+    return scan_new, mask_new
+
+
+def get_multiple_augmentations(scan: np.ndarray, mask: np.ndarray, aug_cnt: int):
+    """
+    Augment 2D scan slice and mask slice. Include original slices into return lists.
+    :return: list of augmented slices and masks.
     """
 
     if aug_cnt < 0:
         raise ValueError(f'aug_cnt must be >= 0. passed {aug_cnt}')
 
-    scans_aug = [scan]
-    labels_aug = [labels]
+    scan_augs = [scan]
+    mask_augs = [mask]
 
-    im_s = np.dstack([scan, labels])
     for i in range(aug_cnt):
-        aug_vector = gen_aug_vector()
-        # print(f'i: {i}. aug vector: {aug_vector}')
-        im_s_copy = im_s.copy()
-        im_s_aug = augment(im_s_copy, aug_vector)
-        scan_t = im_s_aug[:, :, 0]
-        label_t = im_s_aug[:, :, 1]
+        scan_cur_aug, mask_cur_aug = get_single_augmentation(scan, mask)
+        scan_augs.append(scan_cur_aug)
+        mask_augs.append(mask_cur_aug)
 
-        # check that no values besides {0, 1} are present in labels array
-        labels_unique_values = np.unique(label_t)
-        assert np.setdiff1d(labels_unique_values, [0, 1]).size == 0, \
-            f'unique values in labels array: {labels_unique_values}'
-
-        label_t = label_t.astype(np.uint8)
-        scans_aug.append(scan_t)
-        labels_aug.append(label_t)
-
-    return scans_aug, labels_aug
+    return scan_augs, mask_augs

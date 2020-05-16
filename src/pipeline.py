@@ -15,7 +15,7 @@ import const
 import model.utils as mu
 import utils
 from data import preprocessing
-from data.dataloader import DataLoader
+from data.dataloaders import DataLoaderWithAugmentations
 from data.datasets import BaseDataset
 from model import UNet, MobileNetV2_UNet
 from model.losses import *
@@ -88,11 +88,11 @@ class Pipeline:
         # optimizer = optim.SGD(self.net.parameters(), lr=0.0001, momentum=0.9)
         optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
 
-        train_loader = DataLoader(
+        train_loader = DataLoaderWithAugmentations(
             train_dataset, orig_img_per_batch=train_orig_img_per_batch,
             aug_cnt=train_aug_cnt, to_shuffle=True
         )
-        valid_loader = DataLoader(
+        valid_loader = DataLoaderWithAugmentations(
             valid_dataset, orig_img_per_batch=valid_batch_size,
             aug_cnt=0, to_shuffle=False
         )
@@ -145,16 +145,18 @@ class Pipeline:
 
     def segment_scans(
             self, checkpoint_fp: str, scans_dp: str,
-            ids_list: List[str] = None, output_dp: str = None, postfix: str = None
+            ids: List[str] = None, output_dp: str = None, postfix: str = None
     ):
         """
         :param checkpoint_fp:   path to .pth file with net's params dict
         :param scans_dp:    path directory with .nii.gz scans.
                             will check that scans do not have any postfixes in their filenames.
-        :param ids_list:    list of image ids to consider. if None segment all scans under `scans_dp`
+        :param ids:    list of image ids to consider. if None segment all scans under `scans_dp`
         :param output_dp:   path to directory to store results of segmentation
         :param postfix:     postfix of segmented filenames
         """
+        assert ids is None or isinstance(ids, (list, tuple))
+
         print(const.SEPARATOR)
         print('Pipeline.segment_scans()')
 
@@ -173,7 +175,7 @@ class Pipeline:
         scans_fps_filtered = []
         for fp in scans_fps:
             img_id, img_postfix = utils.parse_image_id_from_filepath(fp, get_postfix=True)
-            if img_postfix != '' or ids_list is not None and img_id not in ids_list:
+            if img_postfix != '' or ids is not None and img_id not in ids:
                 continue
             scans_fps_filtered.append(fp)
         print(f'# of scans left after filtering: {len(scans_fps_filtered)}')

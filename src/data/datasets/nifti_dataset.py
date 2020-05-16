@@ -8,24 +8,26 @@ import tqdm
 
 import const
 import utils
-from data import preprocessing
+from data import preprocessing, augmentations
 from data.datasets import BaseDataset
 
 
 class NiftiDataset(BaseDataset):
     def __init__(self, scans_dp: str, masks_dp: str, img_ids: List[str] = None):
-        self.scans_dp = scans_dp
-        self.masks_dp = masks_dp
-        self.img_ids = img_ids
+        assert img_ids is None or isinstance(img_ids, (list, tuple))
+
+        self._scans_dp = scans_dp
+        self._masks_dp = masks_dp
+        self._img_ids = img_ids
 
         self._init_info()
         self._init_slice_info()
 
     def _init_info(self):
-        paths_dict = utils.get_files_dict(self.scans_dp, self.masks_dp, ids=self.img_ids)
+        paths_dict = utils.get_files_dict(self._scans_dp, self._masks_dp, ids=self._img_ids)
 
         for cur_id, paths in paths_dict.items():
-            if self.img_ids is None or cur_id in self.img_ids:
+            if self._img_ids is None or cur_id in self._img_ids:
                 img_scan, _ = utils.load_nifti(paths['scan_fp'], load_data=False)
                 img_mask, _ = utils.load_nifti(paths['mask_fp'], load_data=False)
                 assert img_scan.shape == img_mask.shape, (f'scan shape != mask shape. '
@@ -34,24 +36,27 @@ class NiftiDataset(BaseDataset):
                                                           f'mask shape: {img_mask.shape}')
                 paths['shape'] = img_scan.shape
 
-        self.info = paths_dict
+        self._info = paths_dict
 
     def _init_slice_info(self):
-        self.slice_info = [
+        self._slice_info = [
             {'id': k, 'scan_fp': v['scan_fp'], 'mask_fp': v['mask_fp'], 'z_ix': x}
-            for k, v in self.info.items()
+            for k, v in self._info.items()
             for x in range(v['shape'][2])
         ]
 
     @property
     def n_images(self):
-        return len(self.info)
-
-    def __len__(self):
-        return len(self.slice_info)
+        return len(self._info)
 
     def __getitem__(self, ix):
-        cur_info = self.slice_info[ix]
+        """
+        Yield (scan, mask, description) tuple for single slice.
+
+        If `slice_info` dict has 'augment' == True for specified slice
+        than augmentations are applied before yielding results.
+        """
+        cur_info = self._slice_info[ix]
         cur_id = cur_info['id']
         z_ix = cur_info['z_ix']
 
@@ -61,11 +66,15 @@ class NiftiDataset(BaseDataset):
         # transforms
         scan = preprocessing.clip_intensities(scan)
 
+        if 'augment' in cur_info and cur_info['augment'] is True:
+            scan, mask = augmentations.get_single_augmentation(scan, mask)
+
         sample = {
             'scan': scan,
             'mask': mask,
             'description': f'{cur_id}_{z_ix}'
         }
+
         return sample
 
     def store_as_numpy_dataset(self, out_dp: str, zoom_factor: float):
@@ -90,14 +99,14 @@ class NiftiDataset(BaseDataset):
         os.makedirs(nifti_dp, exist_ok=True)
 
         # store shapes dict for NumpyDataset
-        shapes_dict = {k: v['shape'] for (k, v) in self.info.items()}
+        shapes_dict = {k: v['shape'] for (k, v) in self._info.items()}
         shapes_dict_fp = os.path.join(out_dp, 'numpy', 'shapes.pickle')
         with open(shapes_dict_fp, 'wb')as fout:
             pickle.dump(shapes_dict, fout)
 
         # process and store scans with masks
-        with tqdm.tqdm(total=len(self.info)) as pbar:
-            for cur_id, cur_info in self.info.items():
+        with tqdm.tqdm(total=len(self._info)) as pbar:
+            for cur_id, cur_info in self._info.items():
                 pbar.set_description(f'image: {cur_id}. shape: {cur_info["shape"]}')
 
                 scan_img, scan_data = utils.load_nifti(cur_info['scan_fp'])
