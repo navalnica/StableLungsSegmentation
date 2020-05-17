@@ -12,6 +12,7 @@ from matplotlib import pyplot as plt
 # from skimage.segmentation import mark_boundaries
 # from skimage.util import img_as_float
 from sklearn.metrics import pairwise_distances
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim.optimizer import Optimizer
 
 import const
@@ -19,6 +20,20 @@ import utils
 from data.dataloaders import BaseDataLoader
 from model import UNet
 from utils import get_single_image_slice_gen
+
+
+def get_all_lr_from_optimizer(optimizer: Optimizer):
+    lrs = [group['lr'] for group in optimizer.param_groups]
+    return lrs
+
+
+def get_lr_from_optimizer_first_group(optimizer: Optimizer):
+    """
+    We assume that optimizer has single param group.
+    So learning rate for the first param group only is returned.
+    """
+    lrs = get_all_lr_from_optimizer(optimizer)
+    return lrs[0]
 
 
 def segment_single_scan(data: np.ndarray, net, device):
@@ -133,12 +148,15 @@ def loss_epoch(
 def train_valid(
         net: UNet, loss_func: nn.Module, metrics: List[nn.Module],
         train_loader: BaseDataLoader, valid_loader: BaseDataLoader,
-        optimizer: Optimizer, device: torch.device, n_epochs: int,
+        optimizer: Optimizer, scheduler: ReduceLROnPlateau, device: torch.device,
+        n_epochs: int, es_tolerance: float, es_patience: int,
         out_dp: str, max_batches: int = None
 ) -> dict:
     """
     :param out_dp: path to dir where to store checkpoints, history and learning curves plot
     :param max_batches: max number of batches to process on each epoch. use to perform sanity check
+    :param es_tolerance: early stopping tolerance
+    :param es_patience: number of epochs with no significant improvements for early stopping to fire
 
     Returns
     -------
@@ -154,13 +172,10 @@ def train_valid(
     history = {utils.get_class_name(m): {'train': [], 'valid': []} for m in metrics}
     loss_name = utils.get_class_name(loss_func)
 
-    # early stopping variables
-    es_cnt = 0
-    es_tolerance = 0.0001
-    es_patience = 10
+    es_cnt = 0  # early stopping counter
 
     best_loss_valid = float('inf')
-    best_epoch_cnt = -1
+    best_epoch_ix = -1  # index of best epoch starting from 1
     best_net_params = copy.deepcopy(net.state_dict())
 
     print(f'\ntrain parameters:\n\n'
@@ -168,8 +183,11 @@ def train_valid(
           f'loss function: {loss_name}\n'
           f'optimizer: {optimizer}\n'
           f'number of epochs: {n_epochs}\n'
+          f'es tolerance: {es_tolerance : .3e}\n'
+          f'es patience: {es_patience}\n'
           f'device: {device}\n'
           f'checkpoints dir: {os.path.abspath(checkpoints_dp)}\n'
+          f'out dp: "{out_dp}"\n'
           f'max_batches: {max_batches}'
           )
     print(f'\ntrain_loader:\n{train_loader}')
@@ -181,6 +199,9 @@ def train_valid(
     for cur_epoch in range(1, n_epochs + 1):
         print(f'\n{"=" * 15} epoch {cur_epoch}/{n_epochs} {"=" * 15}')
         time_start_epoch = time.time()
+
+        lr_on_epoch_start = get_lr_from_optimizer_first_group(optimizer)
+        print(f'current learning rate: {lr_on_epoch_start : .3e}\n')
 
         # ----------- training ----------- #
         net.train()
@@ -218,15 +239,6 @@ def train_valid(
                         f'{utils.get_elapsed_time_str(time_start_epoch_valid)}')
 
         # ----------- end of epoch ----------- #
-        # append epoch stats to history
-        for k in epoch_stats_train.keys() & epoch_stats_valid.keys():
-            history[k]['train'].append(epoch_stats_train[k])
-            history[k]['valid'].append(epoch_stats_valid[k])
-
-        # print elapsed time for epoch
-        tqdm.tqdm.write('')
-        tqdm.tqdm.write(f'time elapsed for epoch: '
-                        f'{utils.get_elapsed_time_str(time_start_epoch)}')
 
         # store parameters
         torch.save(
@@ -234,26 +246,47 @@ def train_valid(
             os.path.join(checkpoints_dp, f'cp_{loss_name}_epoch_{cur_epoch:02}.pth')
         )
 
+        # append epoch stats to history
+        for k in epoch_stats_train.keys() & epoch_stats_valid.keys():
+            history[k]['train'].append(epoch_stats_train[k])
+            history[k]['valid'].append(epoch_stats_valid[k])
+        last_val_loss = history[loss_name]['valid'][-1]
+
         # build learning curves (overwrite existing file on each epoch)
         utils.build_learning_curves(metrics=history, loss_name=loss_name, out_dp=out_dp)
 
-        # ----------- early stopping ----------- #
+        print(f'\nepoch validation loss: {last_val_loss : .4f}')
 
-        # TODO: allow any improvements (not only > tolerance)
-        #   use tolerance only for worsened loss
+        # scheduler step
+        scheduler.step(last_val_loss)
+        cur_lr = get_lr_from_optimizer_first_group(optimizer)
+        if cur_lr != lr_on_epoch_start:
+            # load previous best parameters and continue training
+            print(f'LR was reduced. Loading model state dict from previous best epoch:\n'
+                  f'best_epoch_ex: {best_epoch_ix}\n'
+                  f'best_loss_valid: {best_loss_valid : .4f}'
+                  )
+            net.load_state_dict(best_net_params)
+
+        # print elapsed time for epoch
+        print(f'\ntime elapsed for epoch: '
+              f'{utils.get_elapsed_time_str(time_start_epoch)}')
+
+        # ----------- early stopping ----------- #
 
         if history[loss_name]['valid'][-1] < best_loss_valid - es_tolerance:
             best_loss_valid = history[loss_name]['valid'][-1]
-            tqdm.tqdm.write(f'epoch {cur_epoch}: new best loss valid: {best_loss_valid : .4f}')
+            tqdm.tqdm.write(f'\nepoch {cur_epoch}: new best loss valid: {best_loss_valid : .4f}')
             best_net_params = copy.deepcopy(net.state_dict())
-            best_epoch_cnt = cur_epoch
+            best_epoch_ix = cur_epoch
             es_cnt = 0
         else:
             es_cnt += 1
 
         if es_cnt >= es_patience:
             tqdm.tqdm.write(const.SEPARATOR)
-            tqdm.tqdm.write(f'Early Stopping! no improvements for {es_patience} epochs for {loss_name} metric')
+            tqdm.tqdm.write(f'\nEarly Stopping!'
+                            f'\nNo improvements for {es_patience} epochs for {loss_name} metric')
             break
 
     # ----------- end of training ----------- #
@@ -262,7 +295,7 @@ def train_valid(
         'metrics': history,
         'loss_name': loss_name,
         'best_loss_valid': best_loss_valid,
-        'best_epoch_cnt': best_epoch_cnt
+        'best_epoch_ix': best_epoch_ix
     }
 
     # save best weights once again
@@ -281,7 +314,7 @@ def train_valid(
     tqdm.tqdm.write(f'total time elapsed: '
                     f'{utils.get_elapsed_time_str(time_start_train_valid)}')
     print(f'best loss valid: {best_loss_valid : .4f}')
-    print(f'best epoch: {best_epoch_cnt}')
+    print(f'best epoch: {best_epoch_ix}')
 
     return history
 

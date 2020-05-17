@@ -42,13 +42,35 @@ class BaseDataset(Dataset):
 
         utils.check_var_to_be_iterable_collection(ids_heavy_augs)
 
+        n_slices_hard_cases = 0
+        n_slices_regular_cases = 0
+
         new_slice_info = []
         for si in self._slice_info:
+            is_hard_case = ids_heavy_augs is not None and si['id'] in ids_heavy_augs
+
+            if is_hard_case:
+                n_slices_hard_cases += 1
+            else:
+                n_slices_regular_cases += 1
+
+            # append raw slice
             new_slice_info.append({**si, 'augment': False})
-            cur_augs = augs_cnt_heavy \
-                if ids_heavy_augs is not None and si['id'] in ids_heavy_augs \
-                else augs_cnt
+            # append augmentations
+            cur_augs = augs_cnt_heavy if is_hard_case else augs_cnt
             new_slice_info.extend([{**si, 'augment': True} for _ in range(cur_augs)])
+
+        print(f'\nhard cases.\t'
+              f'raw slices: {n_slices_hard_cases}.\t'
+              f'together with augmentations: {n_slices_hard_cases * (1 + augs_cnt_heavy)}')
+        print(f'regular cases.\t'
+              f'raw slices: {n_slices_regular_cases}.\t'
+              f'together with augmentations: {n_slices_regular_cases * (1 + augs_cnt)}')
+        print(f'combined.\t'
+              f'raw slices: {n_slices_hard_cases + n_slices_regular_cases}.\t'
+              f'together with augmentations: '
+              f'{n_slices_hard_cases * (1 + augs_cnt_heavy) + n_slices_regular_cases * (1 + augs_cnt)}')
+
         self._slice_info = new_slice_info
 
     def __len__(self):

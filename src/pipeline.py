@@ -81,13 +81,24 @@ class Pipeline:
 
         # it is important to create optimizer only after moving model to appropriate device
         # as model's parameters will be different objects after changing device
+
         # optimizer = optim.SGD(self.net.parameters(), lr=0.0001, momentum=0.9)
         optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
+
+        # consider providing the same tolerance to ReduceLROnPlateau and Early Stopping
+        tolerance = 1e-4
+
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.2, min_lr=1e-6,
+            threshold=tolerance, patience=2, threshold_mode='abs',
+            cooldown=0, verbose=True
+        )
 
         history = mu.train_valid(
             net=self.net, loss_func=loss_func, metrics=metrics,
             train_loader=train_loader, valid_loader=valid_loader,
-            optimizer=optimizer, device=self.device, n_epochs=n_epochs,
+            optimizer=optimizer, scheduler=scheduler, device=self.device,
+            n_epochs=n_epochs, es_tolerance=tolerance, es_patience=15,
             out_dp=out_dp, max_batches=max_batches
         )
 
