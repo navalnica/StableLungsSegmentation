@@ -263,7 +263,7 @@ def train_valid(
         if cur_lr != lr_on_epoch_start:
             # load previous best parameters and continue training
             print(f'LR was reduced. Loading model state dict from previous best epoch:\n'
-                  f'best_epoch_ex: {best_epoch_ix}\n'
+                  f'best_epoch_ix: {best_epoch_ix}\n'
                   f'best_loss_valid: {best_loss_valid : .4f}'
                   )
             net.load_state_dict(best_net_params)
