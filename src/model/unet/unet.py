@@ -23,13 +23,11 @@ class DoubleConv(nn.Module):
 class Down(nn.Module):
     def __init__(self, in_ch, out_ch):
         super(Down, self).__init__()
-        self.max_pool_conv = nn.Sequential(
-            nn.MaxPool2d(2),
-            DoubleConv(in_ch, out_ch)
-        )
+        self.double_conv = DoubleConv(in_ch, out_ch)
 
     def forward(self, x):
-        x = self.max_pool_conv(x)
+        x = F.max_pool2d(x, kernel_size=2)
+        x = self.double_conv(x)
         return x
 
 

@@ -18,7 +18,7 @@ def cli():
 
 
 @cli.command()
-@click.option('--launch', help='launch location',
+@click.option('--launch', help='launch location. used to determine default paths',
               type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--architecture', 'model_architecture', help='model architecture (unet, mnet2)',
               type=click.Choice(['unet', 'mnet2']), default='unet', show_default=True)
@@ -96,7 +96,7 @@ def train(
 
 
 @cli.command()
-@click.option('--launch', help='launch location',
+@click.option('--launch', help='launch location. used to determine default paths',
               type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--architecture', 'model_architecture', help='model architecture (unet, mnet2)',
               type=click.Choice(['unet', 'mnet2']), default='unet', show_default=True)
@@ -139,7 +139,7 @@ def segment_scans(
 
 
 @cli.command()
-@click.option('--launch', help='launch location',
+@click.option('--launch', help='launch location. used to determine default paths',
               type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--scans', 'scans_dp', help='path to directory with nifti scans',
               type=click.STRING, default=None)
