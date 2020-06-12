@@ -73,14 +73,14 @@ def train(
         )
         train_dataset.set_different_aug_cnt_for_two_subsets(1, ids_hard_train, 3)
         # init loader
-        train_loader = DataLoaderNoAugmentations(train_dataset, batch_size=16, to_shuffle=True)
+        train_loader = DataLoaderNoAugmentations(train_dataset, batch_size=4, to_shuffle=True)
     else:
         print('\nwill apply the same augmentations for all train images')
         train_loader = DataLoaderWithAugmentations(
             train_dataset, orig_img_per_batch=8, aug_cnt=1, to_shuffle=True
         )
 
-    valid_loader = DataLoaderNoAugmentations(valid_dataset, batch_size=32, to_shuffle=False)
+    valid_loader = DataLoaderNoAugmentations(valid_dataset, batch_size=4, to_shuffle=False)
 
     device_t = torch.device(device)
     pipeline = Pipeline(model_architecture=model_architecture, device=device_t)

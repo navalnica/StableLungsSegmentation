@@ -29,11 +29,14 @@ def fix_resegm_masks(resegm_filenames, fixed_dp):
         new_nii.to_filename(new_fp)
 
 
-def zoom_slice(matrix, zoom_factor):
+def zoom_slice(matrix, zoom_factor: float = None) -> np.ndarray:
     """
     zoom 2D matrix with using only pixel values
     that are present in the source matrix (nearest-neighbor interpolation).
     """
+    if zoom_factor is None or zoom_factor == 1:
+        return matrix
+
     dsize = tuple([math.floor(x * zoom_factor) for x in reversed(matrix.shape)])
     res = cv2.resize(matrix, dsize=dsize, interpolation=cv2.INTER_NEAREST)
     return res

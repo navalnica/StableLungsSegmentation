@@ -25,7 +25,8 @@ HARD_CASES_MAPPING = os.path.join(DOCS_DN, 'hard_cases_mapping.csv')
 # ----------- data paths from the data root directory ----------- #
 
 ENV_IS_SERVER_LAUNCH = 'IS_SERVER_LAUNCH'
-DEFAULT_NUMPY_DATASET_DN = 'processed_z0.25'
+# DEFAULT_NUMPY_DATASET_DN = 'processed_z0.25'
+DEFAULT_NUMPY_DATASET_DN = 'processed_no_zoom'
 
 
 def set_launch_type_env_var(is_local_launch: bool):
