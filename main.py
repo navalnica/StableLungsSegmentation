@@ -19,14 +19,17 @@ def cli():
 
 @cli.command()
 @click.option('--launch', help='launch location',
-              type=click.Choice(['local', 'server']), default='local')
-@click.option('--architecture', 'model_architecture', help='model architecture (unet, mobilenet)',
-              type=click.Choice(['unet', 'mobilenet']), default='mobilenet')
+              type=click.Choice(['local', 'server']), default='server', show_default=True)
+@click.option('--architecture', 'model_architecture', help='model architecture (unet, mnet2)',
+              type=click.Choice(['unet', 'mnet2']), default='unet', show_default=True)
 @click.option('--device', help='device to use',
-              type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0')
+              type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0', show_default=True)
 @click.option('--dataset', 'dataset_type', help='dataset type',
-              type=click.Choice(['nifti', 'numpy']), default='numpy')
-@click.option('--heavy-augs/--no-heavy-augs', 'apply_heavy_augs', default=True)
+              type=click.Choice(['nifti', 'numpy']), default='numpy', show_default=True)
+@click.option('--heavy-augs/--no-heavy-augs', 'apply_heavy_augs',
+              help='whether to apply different number of augmentations for hard and regular train images'
+                   ' (uses docs/hard_cases_mapping.csv to identify hard cases)',
+              default=True, show_default=True)
 @click.option('--epochs', 'n_epochs', help='max number of epochs to train',
               type=click.INT, required=True)
 @click.option('--out', 'out_dp', help='path to dir to store training artifacts',
@@ -94,11 +97,11 @@ def train(
 
 @cli.command()
 @click.option('--launch', help='launch location',
-              type=click.Choice(['local', 'server']), default='local')
-@click.option('--architecture', 'model_architecture', help='model architecture (unet, mobilenet)',
-              type=click.Choice(['unet', 'mobilenet']), default='unet')
+              type=click.Choice(['local', 'server']), default='server', show_default=True)
+@click.option('--architecture', 'model_architecture', help='model architecture (unet, mnet2)',
+              type=click.Choice(['unet', 'mnet2']), default='unet', show_default=True)
 @click.option('--device', help='device to use',
-              type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0')
+              type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0', show_default=True)
 @click.option('--checkpoint', 'checkpoint_fp',
               help='path to checkpoint .pth file',
               type=click.STRING, default=None)
@@ -106,11 +109,11 @@ def train(
               type=click.STRING, default=None)
 @click.option('--subset', help='what scans to segment under --scans dir: '
                                'either all, or the ones from "validation" dataset',
-              type=click.Choice(['all', 'validation']), default='validation')
+              type=click.Choice(['all', 'validation']), default='all', show_default=True)
 @click.option('--out', 'output_dp', help='path to output directory with segmented masks',
               type=click.STRING, default=None)
 @click.option('--postfix', help='postfix to set for segmented masks',
-              type=click.STRING, default=None)
+              type=click.STRING, default='autolungs', show_default=True)
 def segment_scans(
         launch: str, model_architecture: str, device: str,
         checkpoint_fp: str, scans_dp: str, subset: str,
@@ -129,9 +132,6 @@ def segment_scans(
         split = utils.load_split_from_yaml(const.TRAIN_VALID_SPLIT_FP)
         ids_list = split['valid']
 
-        # TODO
-        # ids_list = ['id00502', 'id00521', 'id00527', 'id00668']
-
     pipeline.segment_scans(
         checkpoint_fp=checkpoint_fp, scans_dp=scans_dp,
         ids=ids_list, output_dp=output_dp, postfix=postfix
@@ -140,13 +140,13 @@ def segment_scans(
 
 @cli.command()
 @click.option('--launch', help='launch location',
-              type=click.Choice(['local', 'server']), default='local')
+              type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--scans', 'scans_dp', help='path to directory with nifti scans',
               type=click.STRING, default=None)
 @click.option('--masks', 'masks_dp', help='path to directory with nifti binary masks',
               type=click.STRING, default=None)
 @click.option('--zoom', 'zoom_factor', help='zoom factor for output images',
-              type=click.FLOAT, default=0.25)
+              type=click.FLOAT, default=0.25, show_default=True)
 @click.option('--out', 'output_dp', help='path to output directory with numpy dataset',
               type=click.STRING, default=None)
 def create_numpy_dataset(

@@ -37,17 +37,17 @@ class Pipeline:
     net = None
 
     def __init__(self, model_architecture: str, device: torch.device):
-        assert model_architecture in ['unet', 'mobilenet']
+        assert model_architecture in ['unet', 'mnet2']
         self.model_architecture = model_architecture
         self.device = device
 
     def create_net(self):
         if self.model_architecture == 'unet':
             self.net = UNet(n_channels=1, n_classes=1)
-        elif self.model_architecture == 'mobilenet':
+        elif self.model_architecture == 'mnet2':
             self.net = MobileNetV2_UNet()
         else:
-            raise ValueError(f'model_architecture must be in ["unet", "mobilenet"]. '
+            raise ValueError(f'model_architecture must be in ["unet", "mnet2"]. '
                              f'passed: {self.model_architecture}')
 
         self.net.to(device=self.device)
@@ -141,16 +141,16 @@ class Pipeline:
     #     mu.visualize_worst_best(self.net, hd_avg, True, self.scans_dp, self.masks_dp, self.device, loss_name)
 
     def segment_scans(
-            self, checkpoint_fp: str, scans_dp: str,
-            ids: List[str] = None, output_dp: str = None, postfix: str = None
+            self, checkpoint_fp: str, scans_dp: str, postfix: str,
+            ids: List[str] = None, output_dp: str = None
     ):
         """
         :param checkpoint_fp:   path to .pth file with net's params dict
         :param scans_dp:    path directory with .nii.gz scans.
                             will check that scans do not have any postfixes in their filenames.
+        :param postfix:     postfix of segmented filenames
         :param ids:    list of image ids to consider. if None segment all scans under `scans_dp`
         :param output_dp:   path to directory to store results of segmentation
-        :param postfix:     postfix of segmented filenames
         """
         utils.check_var_to_be_iterable_collection(ids)
 
@@ -161,7 +161,6 @@ class Pipeline:
         print(f'will store segmented masks under "{output_dp}"')
         os.makedirs(output_dp, exist_ok=True)
 
-        postfix = postfix or 'autolungs'
         print(f'postfix: {postfix}')
 
         self.load_net_from_weights(checkpoint_fp)
