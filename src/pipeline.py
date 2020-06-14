@@ -210,7 +210,10 @@ class Pipeline:
         print(f'\nsegmentation ended. elapsed time: {utils.get_elapsed_time_str(time_start_segmentation)}')
         utils.print_cuda_memory_stats(self.device)
 
-    def lr_find_and_store(self, train_loader: BaseDataLoader, out_dp: str = None):
+    def lr_find_and_store(
+            self, loss_func: nn.Module, train_loader: BaseDataLoader,
+            out_dp: str = None
+    ):
         """
         LRFinder wrapper.
         """
@@ -222,7 +225,7 @@ class Pipeline:
         self.create_optimizer()
 
         lr_finder = LRFinder(
-            net=self.net, loss_func=METRICS_DICT['NegDiceLoss'], optimizer=self.optimizer,
+            net=self.net, loss_func=loss_func, optimizer=self.optimizer,
             train_loader=train_loader, device=self.device, out_dp=out_dp
         )
         lr_finder.lr_find()

@@ -7,6 +7,7 @@ import tqdm
 from torch import nn
 from torch.optim.optimizer import Optimizer
 
+import const
 import utils
 from data.dataloaders import BaseDataLoader
 from model import utils as mu
@@ -47,9 +48,16 @@ class LRFinder:
         self.raw_losses = None
 
     def lr_find(self):
-        print(f'LRFinder.lr_find:\n'
-              f'lr_min: {self.lr_min : .3e}, lr_max: {self.lr_max : .3e},\n'
-              f'q: {self.q : e}, batches: {self.n_batches}\n')
+        print(const.SEPARATOR)
+        print(
+            f'LRFinder.lr_find:\n'
+            f'model architecture: {utils.get_class_name(self.net)}\n'
+            f'loss function: {self.loss_name}\n'
+            f'lr_min: {self.lr_min : .3e}\n'
+            f'lr_max: {self.lr_max : .3e}\n'
+            f'batches: {self.n_batches}\n'
+            f'q: {self.q : e}\n'
+        )
 
         self.lrs = []
         self.losses = []
@@ -99,7 +107,8 @@ class LRFinder:
                 pbar.update(len(xb))
 
         print(f'stopping criteria was not met after the whole epoch.\n'
-              f'probably there are to few batches in data loader.')
+              f'try to increase the `lr_max` value. or probably there are not enough batches - '
+              f'either add augmentations or reset data loader in the end.')
         return self.lrs, self.losses
 
     def store_results(self):
@@ -108,6 +117,8 @@ class LRFinder:
         assert self.raw_losses is not None
 
         out_fp = os.path.join(self.out_dp, 'lr_finder_results.csv')
+
+        print(const.SEPARATOR)
         print(f'LRFinder.store_results: storing results to "{out_fp}"')
 
         df = pd.DataFrame({

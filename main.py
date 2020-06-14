@@ -170,8 +170,12 @@ def lr_find(
 
     device_t = torch.device(device)
 
+    loss_func = METRICS_DICT['NegDiceLoss']
+    # loss_func = METRICS_DICT['FocalLoss']
+
     pipeline = Pipeline(model_architecture=model_architecture, device=device_t)
-    pipeline.lr_find_and_store(train_loader=train_loader, out_dp=out_dp)
+    pipeline.lr_find_and_store(loss_func=loss_func, train_loader=train_loader, out_dp=out_dp)
+
 
 @cli.command()
 @click.option('--launch', help='launch location. used to determine default paths',
