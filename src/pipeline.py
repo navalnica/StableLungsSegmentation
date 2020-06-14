@@ -10,6 +10,7 @@ import tqdm
 from matplotlib import pyplot as plt
 from torch import optim
 from torch.nn import BCELoss
+from torch.optim.optimizer import Optimizer
 
 import const
 import model.utils as mu
@@ -18,6 +19,7 @@ from data import preprocessing
 from data.dataloaders import BaseDataLoader
 from model import UNet, MobileNetV2_UNet
 from model.losses import *
+from model.lr_finder import LRFinder
 
 plt.rcParams['font.size'] = 13
 plt.rcParams['axes.titlesize'] = 15
@@ -35,13 +37,14 @@ METRICS_DICT = {
 
 class Pipeline:
     net = None
+    optimizer = None
 
     def __init__(self, model_architecture: str, device: torch.device):
         assert model_architecture in ['unet', 'mnet2']
         self.model_architecture = model_architecture
         self.device = device
 
-    def create_net(self):
+    def create_net(self) -> nn.Module:
         if self.model_architecture == 'unet':
             self.net = UNet(n_channels=1, n_classes=1)
         elif self.model_architecture == 'mnet2':
@@ -54,10 +57,31 @@ class Pipeline:
 
         return self.net
 
+    def create_optimizer(self) -> Optimizer:
+        """
+        It is important to create optimizer only after moving model to appropriate device
+        as model's parameters will be different after changing the device.
+        """
+
+        # optimizer = optim.SGD(self.net.parameters(), lr=0.0001, momentum=0.9)
+        self.optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
+
+        return self.optimizer
+
+    def load_net_from_weights(self, checkpoint_fp: str):
+        """load model parameters from checkpoint .pth file"""
+        print(f'\nload_net_from_weights()')
+        print(f'loading model parameters from "{checkpoint_fp}"')
+
+        self.create_net()
+
+        state_dict = torch.load(checkpoint_fp)
+        self.net.load_state_dict(state_dict)
+
     def train(
             self, train_loader: BaseDataLoader, valid_loader: BaseDataLoader,
             n_epochs: int, loss_func: nn.Module, metrics: List[nn.Module],
-            out_dp: str, max_batches: int = None, initial_checkpoint_fp: str = None
+            out_dp: str = None, max_batches: int = None, initial_checkpoint_fp: str = None
     ):
         """
         Train wrapper.
@@ -79,17 +103,13 @@ class Pipeline:
             print('training with COLD START')
             self.create_net()
 
-        # it is important to create optimizer only after moving model to appropriate device
-        # as model's parameters will be different objects after changing device
-
-        # optimizer = optim.SGD(self.net.parameters(), lr=0.0001, momentum=0.9)
-        optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
+        self.create_optimizer()
 
         # consider providing the same tolerance to ReduceLROnPlateau and Early Stopping
         tolerance = 1e-4
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.2, min_lr=1e-6,
+            self.optimizer, mode='min', factor=0.2, min_lr=1e-6,
             threshold=tolerance, patience=2, threshold_mode='abs',
             cooldown=0, verbose=True
         )
@@ -97,7 +117,7 @@ class Pipeline:
         history = mu.train_valid(
             net=self.net, loss_func=loss_func, metrics=metrics,
             train_loader=train_loader, valid_loader=valid_loader,
-            optimizer=optimizer, scheduler=scheduler, device=self.device,
+            optimizer=self.optimizer, scheduler=scheduler, device=self.device,
             n_epochs=n_epochs, es_tolerance=tolerance, es_patience=15,
             out_dp=out_dp, max_batches=max_batches
         )
@@ -110,16 +130,6 @@ class Pipeline:
             pickle.dump(history, fout)
 
         utils.print_cuda_memory_stats(self.device)
-
-    def load_net_from_weights(self, checkpoint_fp: str):
-        """load model parameters from checkpoint .pth file"""
-        print(f'\nload_net_from_weights()')
-        print(f'loading model parameters from "{checkpoint_fp}"')
-
-        self.create_net()
-
-        state_dict = torch.load(checkpoint_fp)
-        self.net.load_state_dict(state_dict)
 
     # def evaluate_model(self):
     #     print(const.SEPARATOR)
@@ -199,3 +209,21 @@ class Pipeline:
 
         print(f'\nsegmentation ended. elapsed time: {utils.get_elapsed_time_str(time_start_segmentation)}')
         utils.print_cuda_memory_stats(self.device)
+
+    def lr_find_and_store(self, train_loader: BaseDataLoader, out_dp: str = None):
+        """
+        LRFinder wrapper.
+        """
+        out_dp = out_dp or os.path.join(const.RESULTS_DN, const.LR_FINDER_RESULTS_DN)
+        os.makedirs(out_dp, exist_ok=True)
+        utils.prompt_to_clear_dir_content_if_nonempty(out_dp)
+
+        self.create_net()
+        self.create_optimizer()
+
+        lr_finder = LRFinder(
+            net=self.net, loss_func=METRICS_DICT['NegDiceLoss'], optimizer=self.optimizer,
+            train_loader=train_loader, device=self.device, out_dp=out_dp
+        )
+        lr_finder.lr_find()
+        lr_finder.store_results()

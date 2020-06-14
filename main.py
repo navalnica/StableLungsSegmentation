@@ -141,6 +141,41 @@ def segment_scans(
 @cli.command()
 @click.option('--launch', help='launch location. used to determine default paths',
               type=click.Choice(['local', 'server']), default='server', show_default=True)
+@click.option('--architecture', 'model_architecture', help='model architecture (unet, mnet2)',
+              type=click.Choice(['unet', 'mnet2']), default='unet', show_default=True)
+@click.option('--device', help='device to use',
+              type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0', show_default=True)
+@click.option('--dataset', 'dataset_type', help='dataset type',
+              type=click.Choice(['nifti', 'numpy']), default='numpy', show_default=True)
+@click.option('--out', 'out_dp', help='path to dir to store training artifacts',
+              type=click.STRING, default=None)
+def lr_find(
+        launch: str, model_architecture: str, device: str,
+        dataset_type: str, out_dp: str
+):
+    const.set_launch_type_env_var(launch == 'local')
+    data_paths = const.DataPaths()
+
+    split = utils.load_split_from_yaml(const.TRAIN_VALID_SPLIT_FP)
+
+    if dataset_type == 'nifti':
+        train_dataset = NiftiDataset(data_paths.scans_dp, data_paths.masks_dp, split['train'])
+    elif dataset_type == 'numpy':
+        ndp = const.NumpyDataPaths(data_paths.default_numpy_dataset_dp)
+        train_dataset = NumpyDataset(ndp.scans_dp, ndp.masks_dp, ndp.shapes_fp, split['train'])
+    else:
+        raise ValueError(f"`dataset` should be in ['nifti', 'numpy']. passed '{dataset_type}'")
+
+    train_loader = DataLoaderNoAugmentations(train_dataset, batch_size=16, to_shuffle=True)
+
+    device_t = torch.device(device)
+
+    pipeline = Pipeline(model_architecture=model_architecture, device=device_t)
+    pipeline.lr_find_and_store(train_loader=train_loader, out_dp=out_dp)
+
+@cli.command()
+@click.option('--launch', help='launch location. used to determine default paths',
+              type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--scans', 'scans_dp', help='path to directory with nifti scans',
               type=click.STRING, default=None)
 @click.option('--masks', 'masks_dp', help='path to directory with nifti binary masks',
