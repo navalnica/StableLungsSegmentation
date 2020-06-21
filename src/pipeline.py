@@ -226,7 +226,7 @@ class Pipeline:
 
         lr_finder = LRFinder(
             net=self.net, loss_func=loss_func, optimizer=self.optimizer,
-            train_loader=train_loader, device=self.device, out_dp=out_dp
+            train_loader=train_loader, device=self.device
         )
         lr_finder.lr_find()
-        lr_finder.store_results()
+        lr_finder.store_results(out_dp=out_dp)

@@ -33,6 +33,7 @@ class DataLoaderWithAugmentations(BaseDataLoader):
                 f'orig_img_per_batch: {self._orig_img_per_batch}; '
                 f'aug_cnt: {self._aug_cnt}; '
                 f'batch_size: {self.batch_size}; '
+                f'n_batches: {self.n_batches}; '
                 f'to_shuffle: {self._to_shuffle})'
                 )
 

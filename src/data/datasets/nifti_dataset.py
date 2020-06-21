@@ -105,7 +105,7 @@ class NiftiDataset(BaseDataset):
             pickle.dump(shapes_dict, fout)
 
         # process and store scans with masks
-        with tqdm.tqdm(total=len(self._info)) as pbar:
+        with tqdm.tqdm(total=len(self._info), unit='scan', bar_format=const.TQDM_BAR_FORMAT) as pbar:
             for cur_id, cur_info in self._info.items():
                 pbar.set_description(f'image: {cur_id}. shape: {cur_info["shape"]}')
 

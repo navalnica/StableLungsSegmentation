@@ -2,6 +2,10 @@ import os
 
 SEPARATOR = f'\n{"=" * 20}'
 
+# set custom format for r_bar to avoid inverting the speed rate.
+# according to https://github.com/tqdm/tqdm/issues/931.
+TQDM_BAR_FORMAT = '{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_noinv_fmt}{postfix}]'
+
 # changing groups order might change `utils.parse_image_id_from_filepath` function
 IMAGE_FP_RE_PATTERN = r'(.*\/?)(id[\d]+)_*([^\/]*?)\.(npy|nii\.gz)'
 
@@ -26,8 +30,8 @@ HARD_CASES_MAPPING = os.path.join(DOCS_DN, 'hard_cases_mapping.csv')
 # ----------- data paths from the data root directory ----------- #
 
 ENV_IS_SERVER_LAUNCH = 'IS_SERVER_LAUNCH'
-DEFAULT_NUMPY_DATASET_DN = 'processed_z0.25'
-# DEFAULT_NUMPY_DATASET_DN = 'processed_no_zoom'
+# DEFAULT_NUMPY_DATASET_DN = 'processed_z0.25'
+DEFAULT_NUMPY_DATASET_DN = 'processed_no_zoom'
 
 
 def set_launch_type_env_var(is_local_launch: bool):

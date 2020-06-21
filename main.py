@@ -14,10 +14,10 @@ from pipeline import Pipeline, METRICS_DICT
 
 @click.group()
 def cli():
-    pass
+    """Segmentation pipeline with additional utilities."""
 
 
-@cli.command()
+@cli.command(short_help='Train the model.')
 @click.option('--launch', help='launch location. used to determine default paths',
               type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--architecture', 'model_architecture', help='model architecture (unet, mnet2)',
@@ -32,7 +32,7 @@ def cli():
               default=True, show_default=True)
 @click.option('--epochs', 'n_epochs', help='max number of epochs to train',
               type=click.INT, required=True)
-@click.option('--out', 'out_dp', help='path to dir to store training artifacts',
+@click.option('--out', 'out_dp', help='directory path to store artifacts',
               type=click.STRING, default=None)
 @click.option('--max-batches', help='max number of batches to process. use as sanity check. '
                                     'if no value passed than will process the whole dataset.',
@@ -44,6 +44,7 @@ def train(
         apply_heavy_augs: bool, n_epochs: int, out_dp: str, max_batches: int,
         initial_checkpoint_fp: str
 ):
+    """Train the model. Heavy augs and warm start are supported."""
     loss_func = METRICS_DICT['NegDiceLoss']
     metrics = [
         METRICS_DICT['BCELoss'],
@@ -68,7 +69,7 @@ def train(
 
     # init train data loader
     if apply_heavy_augs:
-        print('\nwill apply heavy augmentations')
+        print('\nwill apply heavy augmentations for train images')
 
         # set different augmentations for hard and general cases
         ids_hard_train = utils.get_image_ids_with_hard_cases_in_train_set(
@@ -80,7 +81,7 @@ def train(
     else:
         print('\nwill apply the same augmentations for all train images')
         train_loader = DataLoaderWithAugmentations(
-            train_dataset, orig_img_per_batch=8, aug_cnt=1, to_shuffle=True
+            train_dataset, orig_img_per_batch=2, aug_cnt=1, to_shuffle=True
         )
 
     valid_loader = DataLoaderNoAugmentations(valid_dataset, batch_size=4, to_shuffle=False)
@@ -95,7 +96,7 @@ def train(
     )
 
 
-@cli.command()
+@cli.command(short_help='Segment scans with already trained model.')
 @click.option('--launch', help='launch location. used to determine default paths',
               type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--architecture', 'model_architecture', help='model architecture (unet, mnet2)',
@@ -119,6 +120,7 @@ def segment_scans(
         checkpoint_fp: str, scans_dp: str, subset: str,
         output_dp: str, postfix: str
 ):
+    """Segment scans with already trained model."""
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
 
@@ -138,7 +140,7 @@ def segment_scans(
     )
 
 
-@cli.command()
+@cli.command(short_help='Find optimal LR for training with 1-cycle policy.')
 @click.option('--launch', help='launch location. used to determine default paths',
               type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--architecture', 'model_architecture', help='model architecture (unet, mnet2)',
@@ -147,12 +149,13 @@ def segment_scans(
               type=click.Choice(['cpu', 'cuda:0', 'cuda:1']), default='cuda:0', show_default=True)
 @click.option('--dataset', 'dataset_type', help='dataset type',
               type=click.Choice(['nifti', 'numpy']), default='numpy', show_default=True)
-@click.option('--out', 'out_dp', help='path to dir to store training artifacts',
+@click.option('--out', 'out_dp', help='directory path to store artifacts',
               type=click.STRING, default=None)
 def lr_find(
         launch: str, model_architecture: str, device: str,
         dataset_type: str, out_dp: str
 ):
+    """Find optimal LR for training with 1-cycle policy."""
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
 
@@ -166,18 +169,15 @@ def lr_find(
     else:
         raise ValueError(f"`dataset` should be in ['nifti', 'numpy']. passed '{dataset_type}'")
 
-    train_loader = DataLoaderNoAugmentations(train_dataset, batch_size=16, to_shuffle=True)
-
-    device_t = torch.device(device)
-
     loss_func = METRICS_DICT['NegDiceLoss']
-    # loss_func = METRICS_DICT['FocalLoss']
+    train_loader = DataLoaderNoAugmentations(train_dataset, batch_size=4, to_shuffle=True)
+    device_t = torch.device(device)
 
     pipeline = Pipeline(model_architecture=model_architecture, device=device_t)
     pipeline.lr_find_and_store(loss_func=loss_func, train_loader=train_loader, out_dp=out_dp)
 
 
-@cli.command()
+@cli.command(short_help='Create numpy dataset from initial Nifti scans.')
 @click.option('--launch', help='launch location. used to determine default paths',
               type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--scans', 'scans_dp', help='path to directory with nifti scans',
@@ -191,6 +191,7 @@ def lr_find(
 def create_numpy_dataset(
         launch: str, scans_dp: str, masks_dp: str, zoom_factor: float, output_dp: str
 ):
+    """Create numpy dataset from initial Nifti scans to speedup the training."""
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
 

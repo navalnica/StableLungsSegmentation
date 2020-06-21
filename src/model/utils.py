@@ -115,7 +115,7 @@ def loss_epoch(
     gen = dataloader.get_generator()
 
     with tqdm.tqdm(total=n_samples, desc=tqdm_description,
-                   unit='slice', leave=True) as pbar_t:
+                   unit='slice', leave=True, bar_format=const.TQDM_BAR_FORMAT) as pbar_t:
         for batch_ix, (scans_batch, masks_batch, descriptions_batch) in enumerate(gen, start=1):
             batch_size = len(scans_batch)
             batch_stats = loss_batch(

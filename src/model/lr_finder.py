@@ -2,8 +2,10 @@ import os
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import torch
 import tqdm
+from matplotlib import pyplot as plt
 from torch import nn
 from torch.optim.optimizer import Optimizer
 
@@ -12,20 +14,25 @@ import utils
 from data.dataloaders import BaseDataLoader
 from model import utils as mu
 
+sns.set(font_scale=1.3)
+
 
 class LRFinder:
     """
     Class that allows to find optimal learning rates to use in 1-cycle policy learning.
+
     Inspired with implementation in fast.ai library.
     """
 
     def __init__(
             self, net: nn.Module,
             loss_func: nn.Module, optimizer: Optimizer, train_loader: BaseDataLoader,
-            lr_min: float = 1e-8, lr_max: float = 1e1, beta=0.98,
-            device: torch.device = torch.device('cuda:0'),
-            out_dp: str = None
+            lr_min: float = 1e-8, lr_max: float = 5e1, beta=0.95,
+            device: torch.device = torch.device('cuda:0')
     ):
+        """
+        :param beta: smoothing factor for exponentially weighted window
+        """
         self.net = net
         self.loss_func = loss_func
         self.loss_name = utils.get_class_name(loss_func)
@@ -40,8 +47,6 @@ class LRFinder:
 
         self.beta = beta
         self.device = device
-        self.out_dp = out_dp
-        assert os.path.isdir(self.out_dp)
 
         self.lrs = None
         self.losses = None
@@ -58,6 +63,7 @@ class LRFinder:
             f'batches: {self.n_batches}\n'
             f'q: {self.q : e}\n'
         )
+        print(f'\ntrain_loader:\n{self.train_loader}\n')
 
         self.lrs = []
         self.losses = []
@@ -68,7 +74,7 @@ class LRFinder:
         best_smoothed_loss = float('inf')
 
         with tqdm.tqdm(total=len(self.train_loader), desc='lr_finder',
-                       unit='slice', leave=True) as pbar:
+                       unit='slice', leave=True, bar_format=const.TQDM_BAR_FORMAT) as pbar:
             for (ix, batch) in enumerate(gen, start=1):
 
                 pbar.set_description(f'lr_finder. cur lr: {cur_lr : .3e}')
@@ -82,12 +88,17 @@ class LRFinder:
                 )
                 loss_value = batch_stats[self.loss_name]
 
+                # calculate exponentially weighted average
                 avg_loss = self.beta * avg_loss + (1 - self.beta) * loss_value
+                # perform bias correction
                 smoothed_loss = avg_loss / (1 - self.beta ** ix)
 
                 self.lrs.append(cur_lr)
                 self.losses.append(smoothed_loss)
                 self.raw_losses.append(loss_value)
+
+                # TODO: stopping criteria was never met with NegDiceLoss as it has values from [-1; 0].
+                #   So for now it doesn't work. It's not that important so I don't fix it.
 
                 # use abs() to take care for negative valued losses such as Negative Dice Loss
                 threshold = best_smoothed_loss + 3 * abs(best_smoothed_loss)
@@ -97,7 +108,7 @@ class LRFinder:
                           f'best smoothed loss: {best_smoothed_loss : .3e}\n'
                           f'threshold: {threshold : .3e}\n'
                           f'stopping...')
-                    return self.lrs, self.losses
+                    self._build_results_df()
 
                 if smoothed_loss < best_smoothed_loss:
                     best_smoothed_loss = smoothed_loss
@@ -109,19 +120,34 @@ class LRFinder:
         print(f'stopping criteria was not met after the whole epoch.\n'
               f'try to increase the `lr_max` value. or probably there are not enough batches - '
               f'either add augmentations or reset data loader in the end.')
-        return self.lrs, self.losses
+        self._build_results_df()
 
-    def store_results(self):
+    def _build_results_df(self):
         assert self.lrs is not None
         assert self.losses is not None
         assert self.raw_losses is not None
 
-        out_fp = os.path.join(self.out_dp, 'lr_finder_results.csv')
+        self.results_df = pd.DataFrame({
+            'learning_rate': self.lrs, 'loss': self.losses, 'raw_loss': self.raw_losses
+        })
+
+    def store_results(self, out_dp: str = None):
+        assert os.path.isdir(out_dp)
+        assert self.results_df is not None
 
         print(const.SEPARATOR)
-        print(f'LRFinder.store_results: storing results to "{out_fp}"')
+        print(f'LRFinder.store_results: storing results under "{out_dp}"')
+        self.results_df.to_csv(os.path.join(out_dp, 'lr_finder_results.csv'), index=False)
+        self.plot_loss_values(self.results_df, os.path.join(out_dp, 'lr_finder_plots.png'))
 
-        df = pd.DataFrame({
-            'learning_rate': self.lrs, 'loss': self.losses, 'raw_losses': self.raw_losses
-        })
-        df.to_csv(out_fp, index=False)
+    def plot_loss_values(self, df, out_fp: str = None):
+        plt.figure(figsize=(15, 10), dpi=110)
+        plt.plot(df['learning_rate'], df['raw_loss'], label='raw loss', alpha=.5)
+        plt.plot(df['learning_rate'], df['loss'], linewidth=2, label='smoothed loss')
+        plt.xscale('log')
+        plt.xlabel('learning rate (log scale)')
+        plt.ylabel('negative dice loss')
+        plt.title('LR finder results')
+        plt.legend(loc='lower left')
+        if out_fp is not None:
+            plt.savefig(out_fp)

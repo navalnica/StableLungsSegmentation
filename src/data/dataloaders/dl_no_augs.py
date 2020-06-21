@@ -22,6 +22,7 @@ class DataLoaderNoAugmentations(BaseDataLoader):
                 f'len: {len(self)}; '
                 f'n_images: {self.n_images}; '
                 f'batch_size: {self.batch_size}; '
+                f'n_batches: {self.n_batches}; '
                 f'to_shuffle: {self._to_shuffle})'
                 )
 
