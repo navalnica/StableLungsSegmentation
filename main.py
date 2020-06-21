@@ -17,7 +17,7 @@ def cli():
     """Segmentation pipeline with additional utilities."""
 
 
-@cli.command(short_help='Train the model.')
+@cli.command(short_help='Build and train the model. Heavy augs and warm start are supported.')
 @click.option('--launch', help='launch location. used to determine default paths',
               type=click.Choice(['local', 'server']), default='server', show_default=True)
 @click.option('--architecture', 'model_architecture', help='model architecture (unet, mnet2)',
@@ -44,7 +44,7 @@ def train(
         apply_heavy_augs: bool, n_epochs: int, out_dp: str, max_batches: int,
         initial_checkpoint_fp: str
 ):
-    """Train the model. Heavy augs and warm start are supported."""
+    """Build and train the model. Heavy augs and warm start are supported."""
     loss_func = METRICS_DICT['NegDiceLoss']
     metrics = [
         METRICS_DICT['BCELoss'],
@@ -120,7 +120,7 @@ def segment_scans(
         checkpoint_fp: str, scans_dp: str, subset: str,
         output_dp: str, postfix: str
 ):
-    """Segment scans with already trained model."""
+    """Segment Nifti `.nii.gz` scans with already trained model stored in `.pth` file."""
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
 
@@ -191,7 +191,7 @@ def lr_find(
 def create_numpy_dataset(
         launch: str, scans_dp: str, masks_dp: str, zoom_factor: float, output_dp: str
 ):
-    """Create numpy dataset from initial Nifti scans to speedup the training."""
+    """Create numpy dataset from initial Nifti `.nii.gz` scans to speedup the training."""
     const.set_launch_type_env_var(launch == 'local')
     data_paths = const.DataPaths()
 

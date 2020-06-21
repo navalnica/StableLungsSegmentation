@@ -39,7 +39,24 @@ To run the code you will need to activate the virtual environment:
 
 `source venv/bin/activate`
 
+### 1-cycle learning
 
+The project is __going to implement__ the 1-cycle learning policy proposed by 
+[Leslie Smith](https://arxiv.org/abs/1803.09820) 
+that significantly decreases the time required to train the model 
+and acts as a regularization method allowing for training at high learning rates.
+
+This part consists from 2 steps:
+* [x] Add LR-finder module to be able to choose optimal learning rates for 1-cycle policy
+* [ ] Implement 1-cycle learning rate scheduler (change LR after each batch).
+
+LR-finder is implemented as a separate endpoint (usage is described below). 
+It performs training for only 1 epoch with learning rate increasing from a very low
+value (~10 ** -8) to a very high (~10 ** 2). 
+
+Results are stored as `.csv` dataframe 
+and `.png` plot with loss value dynamics that looks like this:
+![lr_finder_plots](img/lr_finder_plots.png)
 
 ### Pipeline endpoints
 
@@ -47,7 +64,7 @@ There are couple of command line endpoints implemented with
 [Click](https://click.palletsprojects.com/en/7.x/) module
 that make it easy to use the pipeline for different tasks. 
 
-To call any endpoint use
+To call any endpoint use:
 ```
 (venv) $ python main.py <endpoint-name>
 ```
@@ -56,7 +73,8 @@ All the endpoints are to be called from the project root folder.
 
 1. `train`
 
-Use to build and train the model.
+Build and train the model. Heavy augs and warm start are supported.
+
 ```
 Usage: main.py train [OPTIONS]
 
@@ -75,21 +93,24 @@ Options:
                                   identify hard cases)  [default: True]
 
   --epochs INTEGER                max number of epochs to train  [required]
-  --out TEXT                      path to dir to store training artifacts
+  --out TEXT                      directory path to store artifacts
   --max-batches INTEGER           max number of batches to process. use as
                                   sanity check. if no value passed than will
                                   process the whole dataset.
 
   --checkpoint TEXT               path to initial .pth checkpoint for warm
                                   start
+
+  --help                          Show this message and exit.
 ```
 
 2. `segment-scans`
 
-Use to segment `.nii.gz` Nifti scans with already trained model stored in `.pth` file:
+Segment Nifti `.nii.gz` scans with already trained model stored in `.pth` file.
+
 ```
 Usage: main.py segment-scans [OPTIONS]
-  --help                          Show this message and exit.
+
 Options:
   --launch [local|server]       launch location. used to determine default
                                 paths  [default: server]
@@ -109,13 +130,32 @@ Options:
                                 autolungs]
 
   --help                        Show this message and exit.
-
 ```
 
-3. `create-numpy-dataset`
+3. `lr-find`
+ 
+Find optimal LR for training with 1-cycle policy.
 
-Use to create `numpy` dataset out of initial `.nii.gz` images.
-This provides a significant decrease in train time. 
+```
+Usage: main.py lr-find [OPTIONS]
+
+Options:
+  --launch [local|server]       launch location. used to determine default
+                                paths  [default: server]
+
+  --architecture [unet|mnet2]   model architecture (unet, mnet2)  [default:
+                                unet]
+
+  --device [cpu|cuda:0|cuda:1]  device to use  [default: cuda:0]
+  --dataset [nifti|numpy]       dataset type  [default: numpy]
+  --out TEXT                    directory path to store artifacts
+  --help                        Show this message and exit.
+```
+
+4. `create-numpy-dataset`
+
+Create `numpy` dataset from initial Nifti `.nii.gz` scans to speedup the training.
+
 ```
 Usage: main.py create-numpy-dataset [OPTIONS]
 
@@ -128,5 +168,4 @@ Options:
   --zoom FLOAT             zoom factor for output images  [default: 0.25]
   --out TEXT               path to output directory with numpy dataset
   --help                   Show this message and exit.
-
 ```

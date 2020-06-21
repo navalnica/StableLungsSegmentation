@@ -1,5 +1,6 @@
 import os
 
+import matplotlib.ticker as ticker
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -15,6 +16,7 @@ from data.dataloaders import BaseDataLoader
 from model import utils as mu
 
 sns.set(font_scale=1.3)
+sns.set_style({'xtick.bottom': True})
 
 
 class LRFinder:
@@ -27,7 +29,7 @@ class LRFinder:
     def __init__(
             self, net: nn.Module,
             loss_func: nn.Module, optimizer: Optimizer, train_loader: BaseDataLoader,
-            lr_min: float = 1e-8, lr_max: float = 5e1, beta=0.95,
+            lr_min: float = 1e-8, lr_max: float = 5e1, beta=0.97,
             device: torch.device = torch.device('cuda:0')
     ):
         """
@@ -141,13 +143,25 @@ class LRFinder:
         self.plot_loss_values(self.results_df, os.path.join(out_dp, 'lr_finder_plots.png'))
 
     def plot_loss_values(self, df, out_fp: str = None):
-        plt.figure(figsize=(15, 10), dpi=110)
-        plt.plot(df['learning_rate'], df['raw_loss'], label='raw loss', alpha=.5)
-        plt.plot(df['learning_rate'], df['loss'], linewidth=2, label='smoothed loss')
-        plt.xscale('log')
-        plt.xlabel('learning rate (log scale)')
-        plt.ylabel('negative dice loss')
-        plt.title('LR finder results')
-        plt.legend(loc='lower left')
+        fig, ax = plt.subplots(1, 1, figsize=(15, 10), dpi=110)
+
+        ax.plot(df['learning_rate'], df['raw_loss'], label='raw loss', alpha=.5)
+        ax.plot(df['learning_rate'], df['loss'], linewidth=1.5, label='smoothed loss', alpha=0.8)
+
+        # configure x axis
+        ax.set_xscale('log')
+        # configure major and minor ticks
+        ax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=15))
+        ax.xaxis.set_minor_locator(ticker.LogLocator(subs=np.arange(1, 10), numticks=50))
+        # set ticks style
+        ax.tick_params(which='both', width=2)
+        ax.tick_params(which='major', length=15)
+        ax.tick_params(which='minor', length=8, color='r')
+
+        ax.set_xlabel('learning rate (log scale)')
+        ax.set_ylabel(self.loss_name)
+        ax.set_title('LR finder results')
+        ax.legend(loc='lower left')
+
         if out_fp is not None:
-            plt.savefig(out_fp)
+            fig.savefig(out_fp)
